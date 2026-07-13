@@ -19,12 +19,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationOff
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Videocam
@@ -65,10 +67,13 @@ fun BackupScreen(
     selectedCount: Int,
     cloudCount: Int,
     backup: BackupProgress,
+    batteryOptimized: Boolean,
     onStart: () -> Unit,
     onReset: () -> Unit,
     onGoConfig: () -> Unit,
-    onGoCloud: () -> Unit
+    onGoCloud: () -> Unit,
+    onFixBattery: () -> Unit,
+    onOpenBatterySettings: () -> Unit
 ) {
     val configured = settings.isConfigured
     val isUploading = backup.state == BackupState.Uploading
@@ -83,7 +88,7 @@ fun BackupScreen(
     ) {
         SectionHeader(
             title = "Backup",
-            subtitle = "Envie fotos e vídeos selecionados para o Telegram"
+            subtitle = "Notificação de progresso · roda em segundo plano"
         )
 
         Spacer(Modifier.height(18.dp))
@@ -167,6 +172,60 @@ fun BackupScreen(
                         color = TextMuted
                     )
                 }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Battery / background card
+        SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.BatterySaver,
+                    null,
+                    tint = if (batteryOptimized) WarningAmber else SuccessGreen,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (batteryOptimized) "Otimização de bateria ativa"
+                        else "Segundo plano liberado",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        if (batteryOptimized)
+                            "Desative a otimização para o backup não parar com a tela desligada"
+                        else
+                            "O app pode continuar enviando em segundo plano",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            if (batteryOptimized) {
+                Spacer(Modifier.height(12.dp))
+                PrimaryButton(
+                    text = "Desativar otimização de bateria",
+                    onClick = onFixBattery,
+                    icon = Icons.Outlined.BatterySaver
+                )
+                Spacer(Modifier.height(8.dp))
+                SecondaryButton(
+                    text = "Abrir configurações de bateria",
+                    onClick = onOpenBatterySettings
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.NotificationsActive, null, tint = TelegramBlue, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Durante o envio, uma notificação mostra o progresso (ex.: 12/50).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
             }
         }
 
@@ -272,10 +331,10 @@ fun BackupScreen(
                     Spacer(Modifier.width(8.dp))
                     Text("Dicas", style = MaterialTheme.typography.titleMedium, color = Color.White)
                 }
+                TipLine("A notificação de progresso fica na barra enquanto envia.")
+                TipLine("Desative a otimização de bateria para segundo plano estável.")
                 TipLine("Toque numa mídia para visualizar; segure para selecionar.")
-                TipLine("Vídeos são enviados com streaming habilitado (sendVideo).")
                 TipLine("Itens enviados entram na aba Nuvem automaticamente.")
-                TipLine("Ajuste GPS/EXIF em Config → Metadados no envio.")
             }
         }
 

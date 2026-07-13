@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SdStorage
@@ -73,6 +75,7 @@ import com.telebackup.app.ui.theme.SuccessGreen
 import com.telebackup.app.ui.theme.TelegramBlue
 import com.telebackup.app.ui.theme.TextMuted
 import com.telebackup.app.ui.theme.TextSecondary
+import com.telebackup.app.ui.theme.WarningAmber
 
 @Composable
 fun SettingsScreen(
@@ -80,9 +83,12 @@ fun SettingsScreen(
     isTesting: Boolean,
     testOk: Boolean?,
     testMessage: String?,
+    batteryOptimized: Boolean = false,
     onSave: (String, String) -> Unit,
     onTest: (String, String) -> Unit,
-    onSaveMetadata: (MetadataOptions) -> Unit
+    onSaveMetadata: (MetadataOptions) -> Unit,
+    onFixBattery: () -> Unit = {},
+    onOpenBatterySettings: () -> Unit = {}
 ) {
     var token by remember { mutableStateOf(settings.botToken) }
     var chatId by remember { mutableStateOf(settings.chatId) }
@@ -178,6 +184,62 @@ fun SettingsScreen(
                     Spacer(Modifier.height(14.dp))
                     StatusBanner(ok = testOk == true, message = testMessage)
                 }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        SectionHeader(
+            title = "Segundo plano e notificações",
+            subtitle = "Necessário para backup com a tela desligada"
+        )
+        Spacer(Modifier.height(12.dp))
+        SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.BatterySaver,
+                    null,
+                    tint = if (batteryOptimized) WarningAmber else SuccessGreen
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        if (batteryOptimized) "Otimização de bateria: ON"
+                        else "Otimização de bateria: OFF",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        if (batteryOptimized)
+                            "O sistema pode pausar o envio. Toque abaixo e escolha Sem restrições."
+                        else
+                            "TeleBackup pode rodar em segundo plano sem ser morto pela bateria.",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton(
+                text = if (batteryOptimized) "Desativar otimização de bateria" else "Já liberado",
+                onClick = onFixBattery,
+                enabled = batteryOptimized,
+                icon = Icons.Outlined.BatterySaver
+            )
+            Spacer(Modifier.height(8.dp))
+            SecondaryButton(
+                text = "Abrir configurações de bateria",
+                onClick = onOpenBatterySettings
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.NotificationsActive, null, tint = TelegramBlue, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Permita notificações para ver o progresso (ex.: Enviando 8/40).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextMuted
+                )
             }
         }
 

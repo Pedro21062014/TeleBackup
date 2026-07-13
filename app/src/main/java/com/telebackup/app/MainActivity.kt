@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.telebackup.app.service.BackupNotifier
 import com.telebackup.app.ui.TeleBackupAppRoot
 import com.telebackup.app.ui.theme.TeleBackupTheme
 
@@ -34,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        BackupNotifier.ensureChannels(this)
         requestMediaPermissions()
 
         setContent {
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
                     LaunchedEffect(Unit) {
                         viewModel.refreshMedia()
+                        viewModel.refreshBatteryStatus()
                     }
 
                     val filtered = when (ui.filter) {
@@ -77,11 +80,20 @@ class MainActivity : ComponentActivity() {
                         onClearCloud = viewModel::clearCloudGallery,
                         onStartBackup = viewModel::startBackup,
                         onClearSnackbar = viewModel::clearSnackbar,
-                        onResetBackup = viewModel::resetBackupState
+                        onResetBackup = viewModel::resetBackupState,
+                        onRequestBatteryUnrestricted = viewModel::requestBatteryUnrestricted,
+                        onOpenBatterySettings = viewModel::openBatterySettings,
+                        onDismissBatteryDialog = viewModel::dismissBatteryDialog,
+                        onContinueAfterBattery = viewModel::continueBackupAfterBatteryPrompt
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.refreshBatteryStatus()
     }
 
     private fun requestMediaPermissions() {
@@ -108,6 +120,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 needed += Manifest.permission.READ_EXTERNAL_STORAGE
             }
+            // Android 13+ only for notifications, but keep safe on 12-
         }
         if (needed.isNotEmpty()) {
             permissionLauncher.launch(needed.toTypedArray())

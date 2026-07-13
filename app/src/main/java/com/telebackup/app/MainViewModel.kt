@@ -13,6 +13,9 @@ import com.telebackup.app.data.MediaItem
 import com.telebackup.app.data.MediaRepository
 import com.telebackup.app.data.MetadataOptions
 import com.telebackup.app.data.TelegramUploader
+import com.telebackup.app.service.BackupRuntime
+import com.telebackup.app.service.BackupService
+import com.telebackup.app.util.BatteryOptimization
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,12 +41,15 @@ data class UiState(
     val cloudFileUrl: String? = null,
     val isLoadingCloudUrl: Boolean = false,
     val snackbar: String? = null,
-    val filter: MediaFilter = MediaFilter.All
+    val filter: MediaFilter = MediaFilter.All,
+    val batteryOptimized: Boolean = true,
+    val showBatteryDialog: Boolean = false
 )
 
 enum class MediaFilter { All, Photos, Videos }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
+    private val appContext = app.applicationContext
     private val prefs = (app as TeleBackupApp).preferences
     private val mediaRepo = MediaRepository(app)
     private val uploader = TelegramUploader(app)
@@ -54,11 +60,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val cloudItems: StateFlow<List<CloudMediaItem>> = cloudStore.items
 
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(
+        UiState(
+            batteryOptimized = !BatteryOptimization.isIgnoringBatteryOptimizations(appContext)
+        )
+    )
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     init {
         viewModelScope.launch { cloudStore.load() }
+
+        // Mirror service progress into UI
+        viewModelScope.launch {
+            BackupRuntime.progress.collect { progress ->
+                _ui.update { it.copy(backup = progress) }
+            }
+        }
+        viewModelScope.launch {
+            BackupRuntime.uploaded.collect { cloud ->
+                // CloudMediaStore already persisted in service; refresh flow by reloading
+                cloudStore.load()
+            }
+        }
+        viewModelScope.launch {
+            BackupRuntime.finished.collect { result ->
+                _ui.update { it.copy(backup = result) }
+                if (result.state == BackupState.Success) {
+                    val now = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+                    prefs.setLastBackup(now)
+                    _ui.update {
+                        it.copy(
+                            snackbar = result.message,
+                            selectionMode = false,
+                            selectedIds = emptySet()
+                        )
+                    }
+                } else if (result.state == BackupState.Error) {
+                    _ui.update { it.copy(snackbar = result.message) }
+                }
+            }
+        }
+    }
+
+    fun refreshBatteryStatus() {
+        val optimized = !BatteryOptimization.isIgnoringBatteryOptimizations(appContext)
+        _ui.update { state ->
+            // If user just allowed unrestricted battery and a job is waiting, auto-start
+            if (!optimized && state.showBatteryDialog && BackupRuntime.pendingJob != null) {
+                state.copy(batteryOptimized = false, showBatteryDialog = false)
+            } else {
+                state.copy(batteryOptimized = optimized)
+            }
+        }
+        if (!optimized && BackupRuntime.pendingJob != null && !BackupRuntime.isRunning.value) {
+            // User returned from system battery dialog with permission granted
+            if (!_ui.value.showBatteryDialog) {
+                launchPendingBackup()
+            }
+        }
+    }
+
+    fun dismissBatteryDialog() {
+        // User closed the dialog without starting
+        BackupRuntime.pendingJob = null
+        _ui.update { it.copy(showBatteryDialog = false) }
+    }
+
+    fun requestBatteryUnrestricted() {
+        BatteryOptimization.requestIgnoreBatteryOptimizations(appContext)
+        // status will refresh on resume
+    }
+
+    fun openBatterySettings() {
+        BatteryOptimization.openBatterySettings(appContext)
     }
 
     fun saveConfig(token: String, chatId: String) {
@@ -114,7 +188,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _ui.update { it.copy(isLoadingMedia = true) }
             try {
-                // Fast path: load device media first so UI populates quickly
                 val fromDevice = mediaRepo.loadDeviceMedia(limit = 2000)
                 _ui.update { state ->
                     val selected = if (!state.selectionMode) emptySet()
@@ -125,7 +198,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         selectedIds = selected
                     )
                 }
-                // Merge optional SAF folders without blocking first paint
                 val folders = settings.value.folderUris
                 if (folders.isNotEmpty()) {
                     val fromFolders = mediaRepo.loadFromFolders(folders)
@@ -160,10 +232,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 selectedIds = if (id != null) state.selectedIds + id else state.selectedIds
             )
         }
-    }
-
-    fun exitSelectionMode() {
-        _ui.update { it.copy(selectionMode = false, selectedIds = emptySet()) }
     }
 
     fun toggleSelect(id: Long) {
@@ -209,11 +277,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         uploader.getFileUrl(token, item.fileId)
                     } else null
             } else null
-            // For full view prefer full file for images; for video use file
             val fullUrl = if (token.isNotBlank() && item.fileId.isNotBlank()) {
                 uploader.getFileUrl(token, item.fileId) ?: url
             } else url
-            // Prefer local uri if still available
             val local = item.localUri.takeIf { it.isNotBlank() }
             _ui.update {
                 it.copy(
@@ -242,6 +308,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Starts backup via foreground service so progress stays in the notification
+     * and work continues with the screen off / app in background.
+     */
     fun startBackup() {
         val cfg = settings.value
         if (cfg.botToken.isBlank() || cfg.chatId.isBlank()) {
@@ -253,21 +323,63 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _ui.update { it.copy(snackbar = "Selecione ao menos um item") }
             return
         }
-        if (_ui.value.backup.state == BackupState.Uploading) return
+        if (BackupRuntime.isRunning.value || _ui.value.backup.state == BackupState.Uploading) {
+            _ui.update { it.copy(snackbar = "Já existe um backup em andamento") }
+            return
+        }
 
-        viewModelScope.launch {
-            val result = uploader.backupAll(
-                token = cfg.botToken,
-                chatId = cfg.chatId,
-                items = selected,
-                options = cfg.metadata,
-                onProgress = { progress -> _ui.update { it.copy(backup = progress) } },
-                onUploaded = { cloud -> cloudStore.add(cloud) }
+        BackupRuntime.pendingJob = BackupRuntime.Job(
+            token = cfg.botToken,
+            chatId = cfg.chatId,
+            items = selected,
+            options = cfg.metadata
+        )
+
+        refreshBatteryStatus()
+        val stillOptimized = !BatteryOptimization.isIgnoringBatteryOptimizations(appContext)
+        if (stillOptimized) {
+            _ui.update { it.copy(showBatteryDialog = true, batteryOptimized = true) }
+            return
+        }
+        launchPendingBackup()
+    }
+
+    fun continueBackupAfterBatteryPrompt() {
+        _ui.update { it.copy(showBatteryDialog = false) }
+        launchPendingBackup()
+    }
+
+    private fun launchPendingBackup() {
+        val pending = BackupRuntime.pendingJob
+        if (pending == null) {
+            _ui.update { it.copy(snackbar = "Nada para enviar") }
+            return
+        }
+        if (BackupRuntime.isRunning.value) return
+
+        _ui.update {
+            it.copy(
+                backup = BackupProgress(
+                    state = BackupState.Uploading,
+                    current = 0,
+                    total = pending.items.size,
+                    message = "Iniciando serviço de backup…"
+                ),
+                snackbar = "Backup em segundo plano · veja a notificação"
             )
-            if (result.state == BackupState.Success) {
-                val now = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
-                prefs.setLastBackup(now)
-                _ui.update { it.copy(snackbar = result.message, selectionMode = false, selectedIds = emptySet()) }
+        }
+        try {
+            BackupService.start(appContext)
+        } catch (e: Exception) {
+            BackupRuntime.pendingJob = null
+            _ui.update {
+                it.copy(
+                    backup = BackupProgress(
+                        state = BackupState.Error,
+                        message = "Falha ao iniciar serviço: ${e.message}"
+                    ),
+                    snackbar = "Não foi possível iniciar o backup em segundo plano"
+                )
             }
         }
     }
@@ -277,15 +389,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun resetBackupState() {
-        _ui.update { it.copy(backup = BackupProgress()) }
-    }
-
-    fun filteredMedia(): List<MediaItem> {
-        val state = _ui.value
-        return when (state.filter) {
-            MediaFilter.All -> state.media
-            MediaFilter.Photos -> state.media.filter { it.isImage }
-            MediaFilter.Videos -> state.media.filter { it.isVideo }
+        if (!BackupRuntime.isRunning.value) {
+            BackupRuntime.resetIfIdle()
+            _ui.update { it.copy(backup = BackupProgress()) }
         }
     }
 }

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -27,6 +28,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,7 +84,11 @@ fun TeleBackupAppRoot(
     onClearCloud: () -> Unit,
     onStartBackup: () -> Unit,
     onClearSnackbar: () -> Unit,
-    onResetBackup: () -> Unit
+    onResetBackup: () -> Unit,
+    onRequestBatteryUnrestricted: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
+    onDismissBatteryDialog: () -> Unit,
+    onContinueAfterBattery: () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -100,6 +106,35 @@ fun TeleBackupAppRoot(
             snackbarHostState.showSnackbar(it)
             onClearSnackbar()
         }
+    }
+
+    if (ui.showBatteryDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissBatteryDialog,
+            title = { Text("Permitir segundo plano") },
+            text = {
+                Text(
+                    "Para o backup continuar com a tela desligada e mostrar a notificação de progresso, " +
+                        "desative a otimização de bateria para o TeleBackup.\n\n" +
+                        "Toque em “Desativar otimização” e escolha Sem restrições / Não otimizar."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRequestBatteryUnrestricted()
+                }) {
+                    Text("Desativar otimização", color = TelegramBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onContinueAfterBattery) {
+                    Text("Continuar mesmo assim", color = TextMuted)
+                }
+            },
+            containerColor = NightSurface,
+            titleContentColor = Color.White,
+            textContentColor = TextMuted
+        )
     }
 
     // Fullscreen local viewer
@@ -216,19 +251,25 @@ fun TeleBackupAppRoot(
                             selectedCount = ui.selectedIds.size,
                             cloudCount = cloudItems.size,
                             backup = ui.backup,
+                            batteryOptimized = ui.batteryOptimized,
                             onStart = onStartBackup,
                             onReset = onResetBackup,
                             onGoConfig = { tab = 4 },
-                            onGoCloud = { tab = 1 }
+                            onGoCloud = { tab = 1 },
+                            onFixBattery = onRequestBatteryUnrestricted,
+                            onOpenBatterySettings = onOpenBatterySettings
                         )
                         else -> SettingsScreen(
                             settings = settings,
                             isTesting = ui.isTesting,
                             testOk = ui.testOk,
                             testMessage = ui.testMessage,
+                            batteryOptimized = ui.batteryOptimized,
                             onSave = onSaveConfig,
                             onTest = onTestConnection,
-                            onSaveMetadata = onSaveMetadata
+                            onSaveMetadata = onSaveMetadata,
+                            onFixBattery = onRequestBatteryUnrestricted,
+                            onOpenBatterySettings = onOpenBatterySettings
                         )
                     }
                 }

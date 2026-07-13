@@ -5,7 +5,7 @@ App Android moderno e minimalista para fazer **backup de fotos e vídeos** para 
 ![Android](https://img.shields.io/badge/Android-8.0%2B-green)
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.9-blue)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-purple)
-![Version](https://img.shields.io/badge/version-1.2.0-orange)
+![Version](https://img.shields.io/badge/version-1.3.0-orange)
 
 ## Download
 
@@ -13,7 +13,7 @@ Baixe o APK mais recente na página de **[Releases](../../releases)**.
 
 | Versão | Arquivo |
 |--------|---------|
-| **1.2.0** (atual) | `TeleBackup-v1.2.0-signed.apk` |
+| **1.3.0** (atual) | `TeleBackup-v1.3.0-signed.apk` |
 
 > Ative **Fontes desconhecidas** / instalar apps desconhecidos no Android para instalar o APK.
 
@@ -103,6 +103,12 @@ TelegramBackup/
 ```
 
 ## Changelog
+
+### 1.3.0
+- Notificação de progresso do backup em tempo real
+- Foreground Service (segundo plano com tela desligada)
+- Pedido para desativar otimização de bateria
+- WakeLock parcial durante o envio
 
 ### 1.2.0
 - Scan completo de `/storage/emulated/0` via MediaStore
