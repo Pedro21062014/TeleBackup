@@ -61,13 +61,20 @@ jobs:
 
       - name: Verify APK
         run: |
+          set -e
           APK=$(ls app/build/outputs/apk/release/*-release.apk | head -1)
           echo "APK=$APK"
-          $ANDROID_HOME/build-tools/*/aapt dump badging "$APK" | head -5
-          $ANDROID_HOME/build-tools/*/apksigner verify --verbose "$APK"
-          unzip -t "$APK" | tail -3
+          ls -lh "$APK"
+          # Pick one build-tools version (glob must not expand to multiple commands)
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "Using build-tools: $BT"
+          "$BT/aapt" dump badging "$APK" | head -8
+          "$BT/apksigner" verify --verbose "$APK"
+          unzip -t "$APK" | tail -5
           cp "$APK" TeleBackup-signed.apk
-          ls -lh TeleBackup-signed.apk
+          # Also name with version for release clarity
+          cp "$APK" TeleBackup-v1.3.1-signed.apk
+          ls -lh TeleBackup-signed.apk TeleBackup-v1.3.1-signed.apk
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -107,9 +114,12 @@ jobs:
             - Segundo plano (Foreground Service)
             - Pedido para desativar otimização de bateria
             - Fotos + vídeos, galeria na nuvem, metadados
-          files: TeleBackup-signed.apk
+          files: |
+            TeleBackup-signed.apk
+            TeleBackup-v1.3.1-signed.apk
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
