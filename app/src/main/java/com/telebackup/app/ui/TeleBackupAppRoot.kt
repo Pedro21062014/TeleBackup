@@ -83,6 +83,7 @@ fun TeleBackupAppRoot(
     onCloseViewer: () -> Unit,
     onOpenCloud: (CloudMediaItem) -> Unit,
     onCloseCloud: () -> Unit,
+    onCloudPageChanged: (CloudMediaItem) -> Unit,
     onRemoveCloud: (String) -> Unit,
     onClearCloud: () -> Unit,
     onSyncCloud: () -> Unit,
@@ -157,14 +158,16 @@ fun TeleBackupAppRoot(
 
     if (ui.cloudViewer != null) {
         CloudViewerScreen(
-            item = ui.cloudViewer,
-            fileUrl = ui.cloudFileUrl,
-            isLoading = ui.isLoadingCloudUrl,
+            items = cloudItems,
+            initial = ui.cloudViewer,
+            urlByFileId = ui.cloudUrlByFileId,
+            loadingIds = ui.cloudLoadingIds,
             onClose = onCloseCloud,
-            onRemove = {
-                onRemoveCloud(ui.cloudViewer.id)
+            onRemove = { item ->
+                onRemoveCloud(item.id)
                 onCloseCloud()
-            }
+            },
+            onPageChanged = onCloudPageChanged
         )
         return
     }

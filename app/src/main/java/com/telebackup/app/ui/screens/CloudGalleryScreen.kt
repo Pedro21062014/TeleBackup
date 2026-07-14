@@ -1,8 +1,6 @@
 package com.telebackup.app.ui.screens
 
 import android.net.Uri
-import android.widget.VideoView
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,13 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.SdStorage
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -52,20 +46,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.telebackup.app.data.CloudMediaItem
 import com.telebackup.app.ui.components.EmptyState
 import com.telebackup.app.ui.components.SectionCard
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.components.StatChip
-import com.telebackup.app.ui.theme.ErrorRose
 import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.TelegramBlue
 import com.telebackup.app.util.ImageLoading
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun CloudGalleryScreen(
@@ -285,138 +274,5 @@ private fun CloudThumb(item: CloudMediaItem, onClick: () -> Unit) {
                 }
             }
         }
-    }
-}
-
-@Composable
-fun CloudViewerScreen(
-    item: CloudMediaItem,
-    fileUrl: String?,
-    isLoading: Boolean,
-    onClose: () -> Unit,
-    onRemove: () -> Unit
-) {
-    BackHandler(onBack = onClose)
-    val dateLabel = item.dateLabel
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        when {
-            isLoading -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = TelegramBlue)
-                }
-            }
-            fileUrl != null -> {
-                if (item.isVideo) {
-                    AndroidView(
-                        factory = { ctx ->
-                            VideoView(ctx).apply {
-                                setVideoURI(Uri.parse(fileUrl))
-                                setOnPreparedListener { mp ->
-                                    mp.isLooping = true
-                                    start()
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    AsyncImage(
-                        model = fileUrl,
-                        contentDescription = item.name,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-            else -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Outlined.CloudOff, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(48.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Text("Não foi possível carregar a mídia", color = Color.White.copy(alpha = 0.8f))
-                        Text("Sincronize a nuvem ou verifique a conexão", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.8f), Color.Transparent)))
-                .statusBarsPadding()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(
-                    Icons.Outlined.Close, null, tint = Color.White,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color.White.copy(alpha = 0.12f), CircleShape)
-                        .padding(6.dp)
-                )
-            }
-            Column(Modifier.weight(1f)) {
-                Text(item.name, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Enviado · $dateLabel", color = Color.White.copy(alpha = 0.65f), style = MaterialTheme.typography.bodySmall)
-            }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Outlined.DeleteOutline, "Remover", tint = ErrorRose)
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))))
-                .padding(20.dp)
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetaChip(Icons.Outlined.SdStorage, item.sizeLabel)
-                MetaChip(
-                    if (item.isVideo) Icons.Outlined.Videocam else Icons.Outlined.Image,
-                    if (item.isVideo) "Vídeo" else "Foto"
-                )
-                MetaChip(Icons.Outlined.Cloud, dateLabel)
-                if (item.hasLocation && item.latitude != null) {
-                    MetaChip(
-                        Icons.Outlined.LocationOn,
-                        "%.4f, %.4f".format(item.latitude, item.longitude)
-                    )
-                }
-            }
-            if (item.caption.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    item.caption,
-                    color = Color.White.copy(alpha = 0.75f),
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MetaChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.1f))
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-    ) {
-        Icon(icon, null, tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(14.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(text, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
     }
 }

@@ -43,6 +43,8 @@ data class UiState(
     val cloudViewer: CloudMediaItem? = null,
     val cloudFileUrl: String? = null,
     val isLoadingCloudUrl: Boolean = false,
+    val cloudUrlByFileId: Map<String, String> = emptyMap(),
+    val cloudLoadingIds: Set<String> = emptySet(),
     val isSyncingCloud: Boolean = false,
     val snackbar: String? = null,
     val filter: MediaFilter = MediaFilter.All,
@@ -348,37 +350,108 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openCloudViewer(item: CloudMediaItem) {
-        viewModelScope.launch {
-            _ui.update {
-                it.copy(
-                    cloudViewer = item,
-                    cloudFileUrl = null,
-                    isLoadingCloudUrl = true
+        _ui.update {
+            it.copy(
+                cloudViewer = item,
+                cloudFileUrl = it.cloudUrlByFileId[item.fileId] ?: item.localUri.takeIf { u -> u.isNotBlank() },
+                isLoadingCloudUrl = item.fileId !in it.cloudUrlByFileId && item.localUri.isBlank()
+            )
+        }
+        // Resolve current + neighbors for fast swipe
+        ensureCloudUrlsAround(item)
+    }
+
+    fun onCloudPageChanged(item: CloudMediaItem) {
+        _ui.update { it.copy(cloudViewer = item) }
+        ensureCloudUrlsAround(item)
+    }
+
+    private fun ensureCloudUrlsAround(center: CloudMediaItem) {
+        val all = cloudStore.items.value
+        val idx = all.indexOfFirst { it.id == center.id }.coerceAtLeast(0)
+        val window = all.subList(
+            (idx - 1).coerceAtLeast(0),
+            (idx + 3).coerceAtMost(all.size)
+        )
+        window.forEach { resolveCloudUrl(it) }
+    }
+
+    private fun resolveCloudUrl(item: CloudMediaItem) {
+        // already have full url
+        if (item.fileId.isNotBlank() && item.fileId in _ui.value.cloudUrlByFileId) return
+        // local uri available
+        if (item.localUri.isNotBlank()) {
+            _ui.update { state ->
+                val map = state.cloudUrlByFileId.toMutableMap()
+                if (item.fileId.isNotBlank()) map[item.fileId] = item.localUri
+                state.copy(
+                    cloudUrlByFileId = map,
+                    isLoadingCloudUrl = if (state.cloudViewer?.id == item.id) false else state.isLoadingCloudUrl,
+                    cloudFileUrl = if (state.cloudViewer?.id == item.id) item.localUri else state.cloudFileUrl
                 )
             }
-            val token = settings.value.botToken
-            val prefer = item.thumbFileId.ifBlank { item.fileId }
-            val url = if (token.isNotBlank() && prefer.isNotBlank()) {
-                uploader.getFileUrl(token, prefer)
-                    ?: if (item.fileId.isNotBlank() && item.fileId != prefer) {
-                        uploader.getFileUrl(token, item.fileId)
-                    } else null
-            } else null
-            val fullUrl = if (token.isNotBlank() && item.fileId.isNotBlank()) {
-                uploader.getFileUrl(token, item.fileId) ?: url
-            } else url
-            val local = item.localUri.takeIf { it.isNotBlank() }
-            _ui.update {
-                it.copy(
-                    cloudFileUrl = fullUrl ?: local,
-                    isLoadingCloudUrl = false
-                )
+            // still try telegram url in background for better quality if needed
+        }
+
+        val token = settings.value.botToken
+        if (token.isBlank() || item.fileId.isBlank()) {
+            if (item.localUri.isBlank()) {
+                _ui.update {
+                    it.copy(
+                        isLoadingCloudUrl = if (it.cloudViewer?.id == item.id) false else it.isLoadingCloudUrl
+                    )
+                }
+            }
+            return
+        }
+
+        _ui.update { it.copy(cloudLoadingIds = it.cloudLoadingIds + item.fileId) }
+        viewModelScope.launch {
+            try {
+                val fullUrl = uploader.getFileUrl(token, item.fileId)
+                val thumbUrl = if (item.thumbFileId.isNotBlank()) {
+                    uploader.getFileUrl(token, item.thumbFileId)
+                } else null
+                val chosen = fullUrl ?: thumbUrl ?: item.localUri.takeIf { it.isNotBlank() }
+                _ui.update { state ->
+                    val map = state.cloudUrlByFileId.toMutableMap()
+                    if (fullUrl != null) map[item.fileId] = fullUrl
+                    if (thumbUrl != null && item.thumbFileId.isNotBlank()) {
+                        map[item.thumbFileId] = thumbUrl
+                    }
+                    // fallback map by fileId to local if no remote
+                    if (fullUrl == null && chosen != null) map[item.fileId] = chosen
+                    state.copy(
+                        cloudUrlByFileId = map,
+                        cloudLoadingIds = state.cloudLoadingIds - item.fileId,
+                        isLoadingCloudUrl = if (state.cloudViewer?.id == item.id) false else state.isLoadingCloudUrl,
+                        cloudFileUrl = if (state.cloudViewer?.id == item.id) {
+                            map[item.fileId] ?: chosen ?: state.cloudFileUrl
+                        } else state.cloudFileUrl
+                    )
+                }
+            } catch (_: Exception) {
+                _ui.update { state ->
+                    state.copy(
+                        cloudLoadingIds = state.cloudLoadingIds - item.fileId,
+                        isLoadingCloudUrl = if (state.cloudViewer?.id == item.id) false else state.isLoadingCloudUrl,
+                        cloudFileUrl = if (state.cloudViewer?.id == item.id) {
+                            item.localUri.takeIf { it.isNotBlank() } ?: state.cloudFileUrl
+                        } else state.cloudFileUrl
+                    )
+                }
             }
         }
     }
 
     fun closeCloudViewer() {
-        _ui.update { it.copy(cloudViewer = null, cloudFileUrl = null, isLoadingCloudUrl = false) }
+        _ui.update {
+            it.copy(
+                cloudViewer = null,
+                cloudFileUrl = null,
+                isLoadingCloudUrl = false
+            )
+        }
     }
 
     fun removeCloudItem(id: String) {
