@@ -55,8 +55,8 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # Skip lintVital (can OOM); produce signed release APK only
-          ./gradlew assembleRelease -x lintVitalRelease -x lintVitalReportRelease --stacktrace
+          # lintVital disabled in app/build.gradle.kts (checkReleaseBuilds=false)
+          ./gradlew :app:assembleRelease --stacktrace
           ls -lh app/build/outputs/apk/release/
 
       - name: Verify APK
