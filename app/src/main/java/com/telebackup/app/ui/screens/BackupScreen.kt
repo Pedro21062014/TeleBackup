@@ -51,12 +51,9 @@ import com.telebackup.app.ui.components.SectionCard
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.components.StatChip
 import com.telebackup.app.ui.theme.ErrorRose
-import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightElevated
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.SuccessGreen
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
 import com.telebackup.app.ui.theme.WarningAmber
 
 @Composable
@@ -78,6 +75,7 @@ fun BackupScreen(
     val configured = settings.isConfigured
     val isUploading = backup.state == BackupState.Uploading
     val meta = settings.metadata
+    val surfaces = LocalAppSurfaces.current
 
     Column(
         modifier = Modifier
@@ -169,7 +167,7 @@ fun BackupScreen(
                     Text(
                         "Último backup: ${settings.lastBackupAt}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextMuted
+                        color = Color(0xFF9AA6BF)
                     )
                 }
             }
@@ -189,7 +187,7 @@ fun BackupScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.LocationOff, null, tint = TelegramBlue, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Metadados ativos", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text("Metadados ativos", style = MaterialTheme.typography.titleMedium, color = surfaces.textPrimary)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onGoConfig) {
                     Text("Editar", color = TelegramBlue)
@@ -213,7 +211,7 @@ fun BackupScreen(
             Text(
                 tags.joinToString(" · ").ifBlank { "Padrão" },
                 style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
+                color = surfaces.textSecondary
             )
         }
 
@@ -249,10 +247,10 @@ fun BackupScreen(
                     Icon(Icons.Outlined.Settings, null, tint = WarningAmber)
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Configuração incompleta", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                        Text("Configuração incompleta", color = surfaces.textPrimary, style = MaterialTheme.typography.titleMedium)
                         Text(
                             "Informe o token do bot e o Group ID",
-                            color = TextSecondary,
+                            color = surfaces.textSecondary,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -282,7 +280,7 @@ fun BackupScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Info, null, tint = TelegramBlue, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Dicas", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text("Dicas", style = MaterialTheme.typography.titleMedium, color = surfaces.textPrimary)
                 }
                 TipLine("A notificação de progresso fica na barra enquanto envia.")
                 TipLine("Desative a otimização de bateria para segundo plano estável.")
@@ -297,17 +295,17 @@ fun BackupScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(NightElevated.copy(alpha = 0.5f))
-                .border(1.dp, NightBorder.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                .background(surfaces.elevated.copy(alpha = if (surfaces.isDark) 0.5f else 1f))
+                .border(1.dp, surfaces.border.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Outlined.Videocam, null, tint = TextSecondary)
+            Icon(Icons.Outlined.Videocam, null, tint = surfaces.textSecondary)
             Spacer(Modifier.width(10.dp))
             Text(
                 "Limite Bot API: fotos ~10 MB · vídeos/docs ~50 MB. Arquivos maiores vão como documento quando possível.",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextMuted
+                color = surfaces.textMuted
             )
         }
 
@@ -317,17 +315,17 @@ fun BackupScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(NightElevated.copy(alpha = 0.5f))
-                .border(1.dp, NightBorder.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                .background(surfaces.elevated.copy(alpha = if (surfaces.isDark) 0.5f else 1f))
+                .border(1.dp, surfaces.border.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Outlined.Speed, null, tint = TextSecondary)
+            Icon(Icons.Outlined.Speed, null, tint = surfaces.textSecondary)
             Spacer(Modifier.width(10.dp))
             Text(
                 "Intervalo suave entre envios para respeitar os limites da API do Telegram.",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextMuted
+                color = surfaces.textMuted
             )
         }
 
@@ -340,6 +338,6 @@ private fun TipLine(text: String) {
     Row {
         Text("•", color = TelegramBlue)
         Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = surfaces.textSecondary)
     }
 }

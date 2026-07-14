@@ -1,6 +1,5 @@
 package com.telebackup.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -11,12 +10,12 @@ import androidx.compose.ui.graphics.Color
 
 // Brand
 val TelegramBlue = Color(0xFF2AABEE)
-val TelegramBlueDark = Color(0xFF229ED9)
+val TelegramBlueDark = Color(0xFF1A8FD1)
 val AccentTeal = Color(0xFF00C2A8)
 val AccentPurple = Color(0xFF7C5CFF)
-val SuccessGreen = Color(0xFF3DDC97)
-val WarningAmber = Color(0xFFFFB020)
-val ErrorRose = Color(0xFFFF5C7A)
+val SuccessGreen = Color(0xFF2DB87A)
+val WarningAmber = Color(0xFFE89B0D)
+val ErrorRose = Color(0xFFE04565)
 
 // Dark surfaces
 val NightBg = Color(0xFF0B0F1A)
@@ -28,15 +27,15 @@ val TextPrimary = Color(0xFFF2F5FA)
 val TextSecondary = Color(0xFF9AA6BF)
 val TextMuted = Color(0xFF6B7690)
 
-// Light surfaces
-val LightBg = Color(0xFFF4F7FB)
+// Light surfaces — high contrast for readability
+val LightBg = Color(0xFFF3F6FB)
 val LightSurface = Color(0xFFFFFFFF)
 val LightCard = Color(0xFFFFFFFF)
-val LightElevated = Color(0xFFF0F4FA)
-val LightBorder = Color(0xFFD5DEEB)
-val LightTextPrimary = Color(0xFF0F1524)
-val LightTextSecondary = Color(0xFF5A657A)
-val LightTextMuted = Color(0xFF8A94A8)
+val LightElevated = Color(0xFFEEF3FA)
+val LightBorder = Color(0xFFC5D0E0)
+val LightTextPrimary = Color(0xFF0B1220)
+val LightTextSecondary = Color(0xFF3D4A60)
+val LightTextMuted = Color(0xFF66758C)
 
 data class AppSurfaceColors(
     val background: Color,
@@ -47,20 +46,26 @@ data class AppSurfaceColors(
     val textPrimary: Color,
     val textSecondary: Color,
     val textMuted: Color,
+    val fieldBg: Color,
+    val fieldText: Color,
+    val fieldLabel: Color,
     val isDark: Boolean
 )
 
 val LocalAppSurfaces = staticCompositionLocalOf {
     AppSurfaceColors(
-        background = NightBg,
-        surface = NightSurface,
-        card = NightCard,
-        elevated = NightElevated,
-        border = NightBorder,
-        textPrimary = TextPrimary,
-        textSecondary = TextSecondary,
-        textMuted = TextMuted,
-        isDark = true
+        background = LightBg,
+        surface = LightSurface,
+        card = LightCard,
+        elevated = LightElevated,
+        border = LightBorder,
+        textPrimary = LightTextPrimary,
+        textSecondary = LightTextSecondary,
+        textMuted = LightTextMuted,
+        fieldBg = Color(0xFFF7F9FC),
+        fieldText = LightTextPrimary,
+        fieldLabel = LightTextSecondary,
+        isDark = false
     )
 }
 
@@ -93,7 +98,7 @@ private val LightColors = lightColorScheme(
     primary = TelegramBlueDark,
     onPrimary = Color.White,
     primaryContainer = Color(0xFFD6F0FF),
-    onPrimaryContainer = Color(0xFF00344D),
+    onPrimaryContainer = Color(0xFF002B40),
     secondary = AccentTeal,
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFC8F5EE),
@@ -107,9 +112,11 @@ private val LightColors = lightColorScheme(
     surfaceVariant = LightElevated,
     onSurfaceVariant = LightTextSecondary,
     outline = LightBorder,
-    outlineVariant = Color(0xFFE8EDF5),
+    outlineVariant = Color(0xFFE2E8F2),
     error = ErrorRose,
-    onError = Color.White
+    onError = Color.White,
+    errorContainer = Color(0xFFFFE5EA),
+    onErrorContainer = Color(0xFF5C1020)
 )
 
 @Composable
@@ -129,6 +136,9 @@ fun TeleBackupTheme(
             textPrimary = TextPrimary,
             textSecondary = TextSecondary,
             textMuted = TextMuted,
+            fieldBg = NightElevated.copy(alpha = 0.55f),
+            fieldText = Color.White,
+            fieldLabel = TextSecondary,
             isDark = true
         )
     } else {
@@ -141,6 +151,9 @@ fun TeleBackupTheme(
             textPrimary = LightTextPrimary,
             textSecondary = LightTextSecondary,
             textMuted = LightTextMuted,
+            fieldBg = Color(0xFFF7F9FC),
+            fieldText = LightTextPrimary,
+            fieldLabel = LightTextSecondary,
             isDark = false
         )
     }

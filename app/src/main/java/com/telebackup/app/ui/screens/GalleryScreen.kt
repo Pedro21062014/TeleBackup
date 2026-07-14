@@ -61,11 +61,8 @@ import com.telebackup.app.ui.components.EmptyState
 import com.telebackup.app.ui.components.PrimaryButton
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.components.StatChip
-import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightElevated
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
 import com.telebackup.app.util.ImageLoading
 
 @Composable
@@ -84,6 +81,7 @@ fun GalleryScreen(
     onOpen: (MediaItem) -> Unit,
     onBackup: () -> Unit
 ) {
+    val surfaces = LocalAppSurfaces.current
     val photos = media.count { it.isImage }
     val videos = media.count { it.isVideo }
     val gridState = rememberLazyGridState()
@@ -100,7 +98,7 @@ fun GalleryScreen(
             else "Armazenamento interno · toque para ver · arraste no viewer",
             action = {
                 IconButton(onClick = onRefresh) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Atualizar", tint = TextSecondary)
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Atualizar", tint = surfaces.textSecondary)
                 }
             }
         )
@@ -113,7 +111,7 @@ fun GalleryScreen(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .background(NightElevated.copy(alpha = 0.55f))
-                .border(1.dp, NightBorder.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                .border(1.dp, surfaces.border.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Icon(Icons.Outlined.Storage, null, tint = TelegramBlue, modifier = Modifier.size(18.dp))
@@ -121,7 +119,7 @@ fun GalleryScreen(
             Text(
                 "storage/emulated/0 · DCIM, Pictures, Download, Movies…",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
+                color = surfaces.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -158,9 +156,9 @@ fun GalleryScreen(
                 }
                 if (selectionMode || selectedIds.isNotEmpty()) {
                     TextButton(onClick = onClear) {
-                        Icon(Icons.Outlined.Close, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.Close, null, tint = surfaces.textSecondary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Limpar", color = TextSecondary)
+                        Text("Limpar", color = surfaces.textSecondary)
                     }
                 }
             }
@@ -179,7 +177,7 @@ fun GalleryScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = TelegramBlue)
                         Spacer(Modifier.height(12.dp))
-                        Text("Lendo storage/emulated/0…", color = TextSecondary)
+                        Text("Lendo storage/emulated/0…", color = surfaces.textSecondary)
                     }
                 }
             }
@@ -237,6 +235,7 @@ fun GalleryScreen(
 
 @Composable
 private fun FilterChipMini(label: String, selected: Boolean, onClick: () -> Unit) {
+    val surfaces = LocalAppSurfaces.current
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -248,11 +247,11 @@ private fun FilterChipMini(label: String, selected: Boolean, onClick: () -> Unit
             selectedContainerColor = TelegramBlue.copy(alpha = 0.2f),
             selectedLabelColor = TelegramBlue,
             selectedLeadingIconColor = TelegramBlue,
-            containerColor = NightElevated.copy(alpha = 0.5f),
-            labelColor = TextSecondary
+            containerColor = surfaces.elevated,
+            labelColor = surfaces.textSecondary
         ),
         border = FilterChipDefaults.filterChipBorder(
-            borderColor = NightBorder,
+            borderColor = surfaces.border,
             selectedBorderColor = TelegramBlue.copy(alpha = 0.5f),
             enabled = true,
             selected = selected
@@ -270,6 +269,7 @@ private fun MediaThumb(
     onLongClick: () -> Unit,
     onCheckClick: () -> Unit
 ) {
+    val surfaces = LocalAppSurfaces.current
     val context = LocalContext.current
     val loader = remember(context) { ImageLoading.imageLoader(context) }
     val request = remember(item.uri, item.isVideo) {
@@ -282,7 +282,7 @@ private fun MediaThumb(
             .clip(RoundedCornerShape(12.dp))
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) TelegramBlue else NightBorder.copy(alpha = 0.4f),
+                color = if (selected) TelegramBlue else surfaces.border.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(12.dp)
             )
             .background(NightElevated)
@@ -309,7 +309,7 @@ private fun MediaThumb(
                     Icon(
                         if (item.isVideo) Icons.Outlined.Videocam else Icons.Outlined.PhotoLibrary,
                         null,
-                        tint = TextMuted,
+                        tint = surfaces.textMuted,
                         modifier = Modifier.size(28.dp)
                     )
                 }
