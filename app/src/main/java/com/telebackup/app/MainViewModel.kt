@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.telebackup.app.data.AppSettings
 import com.telebackup.app.data.BackupProgress
 import com.telebackup.app.data.BackupState
+import com.telebackup.app.data.CloudIndexRemote
 import com.telebackup.app.data.CloudMediaItem
 import com.telebackup.app.data.CloudMediaStore
 import com.telebackup.app.data.MediaItem
@@ -20,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -40,6 +43,7 @@ data class UiState(
     val cloudViewer: CloudMediaItem? = null,
     val cloudFileUrl: String? = null,
     val isLoadingCloudUrl: Boolean = false,
+    val isSyncingCloud: Boolean = false,
     val snackbar: String? = null,
     val filter: MediaFilter = MediaFilter.All,
     val batteryOptimized: Boolean = true,
@@ -54,6 +58,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val mediaRepo = MediaRepository(app)
     private val uploader = TelegramUploader(app)
     private val cloudStore = CloudMediaStore(app)
+    private val cloudIndex = CloudIndexRemote(app)
 
     val settings: StateFlow<AppSettings> = prefs.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
@@ -70,21 +75,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch { cloudStore.load() }
 
-        // Mirror service progress into UI
+        // When credentials become available, restore remote cloud index
+        viewModelScope.launch {
+            settings
+                .map { it.botToken to it.chatId }
+                .distinctUntilChanged()
+                .collect { (token, chatId) ->
+                    if (token.isNotBlank() && chatId.isNotBlank()) {
+                        syncCloudFromTelegram(silent = true)
+                    }
+                }
+        }
+
         viewModelScope.launch {
             BackupRuntime.progress.collect { progress ->
                 _ui.update { it.copy(backup = progress) }
             }
         }
         viewModelScope.launch {
-            BackupRuntime.uploaded.collect { cloud ->
-                // CloudMediaStore already persisted in service; refresh flow by reloading
+            BackupRuntime.uploaded.collect {
                 cloudStore.load()
             }
         }
         viewModelScope.launch {
             BackupRuntime.finished.collect { result ->
                 _ui.update { it.copy(backup = result) }
+                cloudStore.load()
                 if (result.state == BackupState.Success) {
                     val now = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
                     prefs.setLastBackup(now)
@@ -95,6 +111,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             selectedIds = emptySet()
                         )
                     }
+                    // Ensure remote index is published (service also does this)
+                    publishCloudIndex()
                 } else if (result.state == BackupState.Error) {
                     _ui.update { it.copy(snackbar = result.message) }
                 }
@@ -105,7 +123,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshBatteryStatus() {
         val optimized = !BatteryOptimization.isIgnoringBatteryOptimizations(appContext)
         _ui.update { state ->
-            // If user just allowed unrestricted battery and a job is waiting, auto-start
             if (!optimized && state.showBatteryDialog && BackupRuntime.pendingJob != null) {
                 state.copy(batteryOptimized = false, showBatteryDialog = false)
             } else {
@@ -113,7 +130,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         if (!optimized && BackupRuntime.pendingJob != null && !BackupRuntime.isRunning.value) {
-            // User returned from system battery dialog with permission granted
             if (!_ui.value.showBatteryDialog) {
                 launchPendingBackup()
             }
@@ -121,15 +137,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissBatteryDialog() {
-        // User closed the dialog without starting
         BackupRuntime.pendingJob = null
         _ui.update { it.copy(showBatteryDialog = false) }
     }
 
-    /**
-     * Prefer calling from Compose with LocalContext (Activity) so the system
-     * shows the native dialog. This fallback uses application context.
-     */
     fun requestBatteryUnrestricted() {
         BatteryOptimization.requestIgnoreBatteryOptimizations(appContext)
     }
@@ -138,10 +149,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         BatteryOptimization.openBatterySettings(appContext)
     }
 
+    fun setDarkTheme(dark: Boolean) {
+        viewModelScope.launch {
+            prefs.setDarkTheme(dark)
+            _ui.update { it.copy(snackbar = if (dark) "Tema escuro" else "Tema claro") }
+        }
+    }
+
     fun saveConfig(token: String, chatId: String) {
         viewModelScope.launch {
             prefs.saveBotConfig(token, chatId)
-            _ui.update { it.copy(snackbar = "Configuração salva") }
+            _ui.update { it.copy(snackbar = "Configuração salva · sincronizando nuvem…") }
+            syncCloudFromTelegram(silent = false)
         }
     }
 
@@ -166,6 +185,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (result.ok) {
                 prefs.saveBotConfig(token.trim(), chatId.trim())
+                syncCloudFromTelegram(silent = false)
             }
         }
     }
@@ -220,6 +240,70 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         snackbar = "Erro ao ler mídia: ${e.message}"
                     )
                 }
+            }
+        }
+    }
+
+    fun syncCloudFromTelegram(silent: Boolean = false) {
+        val cfg = settings.value
+        if (cfg.botToken.isBlank() || cfg.chatId.isBlank()) {
+            if (!silent) _ui.update { it.copy(snackbar = "Configure token e Group ID") }
+            return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(isSyncingCloud = true) }
+            try {
+                val fetched = cloudIndex.fetchIndex(
+                    token = cfg.botToken,
+                    chatId = cfg.chatId,
+                    knownFileId = cfg.cloudIndexFileId
+                )
+                if (fetched != null && fetched.items.isNotEmpty()) {
+                    cloudStore.addAll(fetched.items, replace = false)
+                    if (fetched.messageId > 0 || fetched.fileId.isNotBlank()) {
+                        prefs.setCloudIndexMeta(fetched.messageId, fetched.fileId)
+                    }
+                    if (!silent) {
+                        _ui.update {
+                            it.copy(
+                                snackbar = "Nuvem restaurada: ${fetched.items.size} item(ns) com data"
+                            )
+                        }
+                    }
+                } else if (!silent) {
+                    // Keep local; maybe first use
+                    val local = cloudStore.snapshot()
+                    _ui.update {
+                        it.copy(
+                            snackbar = if (local.isEmpty())
+                                "Nenhum índice na nuvem ainda — faça um backup"
+                            else
+                                "Usando galeria local (${local.size})"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                if (!silent) {
+                    _ui.update { it.copy(snackbar = "Falha ao sincronizar nuvem: ${e.message}") }
+                }
+            } finally {
+                _ui.update { it.copy(isSyncingCloud = false) }
+            }
+        }
+    }
+
+    private fun publishCloudIndex() {
+        val cfg = settings.value
+        if (cfg.botToken.isBlank() || cfg.chatId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val snapshot = cloudStore.snapshot()
+                if (snapshot.isEmpty()) return@launch
+                val published = cloudIndex.publishIndex(cfg.botToken, cfg.chatId, snapshot)
+                if (published != null) {
+                    prefs.setCloudIndexMeta(published.messageId, published.fileId)
+                }
+            } catch (_: Exception) {
             }
         }
     }
@@ -300,6 +384,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun removeCloudItem(id: String) {
         viewModelScope.launch {
             cloudStore.remove(id)
+            publishCloudIndex()
             _ui.update { it.copy(snackbar = "Removido da galeria na nuvem") }
         }
     }
@@ -307,14 +392,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCloudGallery() {
         viewModelScope.launch {
             cloudStore.clear()
+            publishCloudIndex()
             _ui.update { it.copy(snackbar = "Galeria na nuvem limpa") }
         }
     }
 
-    /**
-     * Starts backup via foreground service so progress stays in the notification
-     * and work continues with the screen off / app in background.
-     */
     fun startBackup() {
         val cfg = settings.value
         if (cfg.botToken.isBlank() || cfg.chatId.isBlank()) {

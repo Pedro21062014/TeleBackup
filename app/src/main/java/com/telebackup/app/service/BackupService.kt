@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import com.telebackup.app.data.BackupState
+import com.telebackup.app.data.CloudIndexRemote
 import com.telebackup.app.data.CloudMediaStore
 import com.telebackup.app.data.TelegramUploader
 import kotlinx.coroutines.CoroutineScope
@@ -91,6 +92,8 @@ class BackupService : Service() {
 
         val uploader = TelegramUploader(applicationContext)
         val cloudStore = CloudMediaStore(applicationContext)
+        val cloudIndex = CloudIndexRemote(applicationContext)
+        val prefs = (application as? com.telebackup.app.TeleBackupApp)?.preferences
 
         job = scope.launch {
             try {
@@ -108,6 +111,15 @@ class BackupService : Service() {
                         BackupRuntime.emitUploaded(cloud)
                     }
                 )
+                // Publish remote index so reinstall + same credentials restores Cloud tab
+                try {
+                    val snapshot = cloudStore.snapshot()
+                    val published = cloudIndex.publishIndex(pending.token, pending.chatId, snapshot)
+                    if (published != null && prefs != null) {
+                        prefs.setCloudIndexMeta(published.messageId, published.fileId)
+                    }
+                } catch (_: Exception) {
+                }
                 BackupRuntime.emitFinished(result)
                 BackupNotifier.showCompleted(
                     this@BackupService,

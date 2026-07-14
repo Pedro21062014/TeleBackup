@@ -9,10 +9,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Local index of media already uploaded to Telegram (cloud gallery).
- * Persists as JSON so the user can browse everything sent by the app.
+ * Also synced as a pinned document in the chat so reinstall + same credentials restores it.
  */
 class CloudMediaStore(private val context: Context) {
 
@@ -28,24 +31,40 @@ class CloudMediaStore(private val context: Context) {
 
     suspend fun add(item: CloudMediaItem) = withContext(Dispatchers.IO) {
         val current = readAll().toMutableList()
-        // avoid duplicates by fileId
         current.removeAll { it.fileId == item.fileId && item.fileId.isNotBlank() }
         current.add(0, item)
-        writeAll(current)
-        _items.value = current
+        val sorted = current.sortedByDescending { it.uploadedAt }
+        writeAll(sorted)
+        _items.value = sorted
     }
 
-    suspend fun addAll(newItems: List<CloudMediaItem>) = withContext(Dispatchers.IO) {
-        if (newItems.isEmpty()) return@withContext
-        val current = readAll().toMutableList()
-        val existingIds = current.map { it.fileId }.toHashSet()
-        for (item in newItems) {
-            if (item.fileId.isNotBlank() && item.fileId in existingIds) continue
-            current.add(0, item)
-            if (item.fileId.isNotBlank()) existingIds += item.fileId
+    suspend fun addAll(newItems: List<CloudMediaItem>, replace: Boolean = false) = withContext(Dispatchers.IO) {
+        if (newItems.isEmpty() && !replace) return@withContext
+        val merged = if (replace) {
+            newItems.sortedByDescending { it.uploadedAt }
+        } else {
+            val current = readAll().toMutableList()
+            val existingIds = current.map { it.fileId }.filter { it.isNotBlank() }.toHashSet()
+            for (item in newItems) {
+                if (item.fileId.isNotBlank() && item.fileId in existingIds) {
+                    // keep newer metadata if same fileId
+                    val idx = current.indexOfFirst { it.fileId == item.fileId }
+                    if (idx >= 0 && item.uploadedAt >= current[idx].uploadedAt) {
+                        current[idx] = item
+                    }
+                    continue
+                }
+                current.add(item)
+                if (item.fileId.isNotBlank()) existingIds += item.fileId
+            }
+            current.sortedByDescending { it.uploadedAt }
         }
-        writeAll(current)
-        _items.value = current
+        writeAll(merged)
+        _items.value = merged
+    }
+
+    suspend fun snapshot(): List<CloudMediaItem> = withContext(Dispatchers.IO) {
+        readAll()
     }
 
     suspend fun remove(id: String) = withContext(Dispatchers.IO) {
@@ -85,7 +104,7 @@ class CloudMediaStore(private val context: Context) {
                         )
                     )
                 }
-            }
+            }.sortedByDescending { it.uploadedAt }
         } catch (_: Exception) {
             emptyList()
         }
@@ -114,5 +133,17 @@ class CloudMediaStore(private val context: Context) {
             )
         }
         file.writeText(arr.toString())
+    }
+
+    companion object {
+        fun formatDate(ts: Long): String {
+            if (ts <= 0) return "—"
+            return SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(ts))
+        }
+
+        fun formatDateShort(ts: Long): String {
+            if (ts <= 0) return ""
+            return SimpleDateFormat("dd/MM/yy", Locale.getDefault()).format(Date(ts))
+        }
     }
 }

@@ -14,7 +14,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telebackup.app.service.BackupNotifier
 import com.telebackup.app.ui.TeleBackupAppRoot
@@ -39,15 +41,26 @@ class MainActivity : ComponentActivity() {
         requestMediaPermissions()
 
         setContent {
-            TeleBackupTheme(darkTheme = true) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    val settings by viewModel.settings.collectAsStateWithLifecycle()
+            val settings by viewModel.settings.collectAsStateWithLifecycle()
+            val dark = settings.darkTheme
+
+            // Status bar icons: dark on light theme, light on dark theme
+            WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !dark
+
+            TeleBackupTheme(darkTheme = dark) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = if (dark) Color(0xFF0B0F1A) else Color(0xFFF4F7FB)
+                ) {
                     val ui by viewModel.ui.collectAsStateWithLifecycle()
                     val cloud by viewModel.cloudItems.collectAsStateWithLifecycle()
 
                     LaunchedEffect(Unit) {
                         viewModel.refreshMedia()
                         viewModel.refreshBatteryStatus()
+                        if (settings.isConfigured) {
+                            viewModel.syncCloudFromTelegram(silent = true)
+                        }
                     }
 
                     val filtered = when (ui.filter) {
@@ -78,13 +91,15 @@ class MainActivity : ComponentActivity() {
                         onCloseCloud = viewModel::closeCloudViewer,
                         onRemoveCloud = viewModel::removeCloudItem,
                         onClearCloud = viewModel::clearCloudGallery,
+                        onSyncCloud = { viewModel.syncCloudFromTelegram(silent = false) },
                         onStartBackup = viewModel::startBackup,
                         onClearSnackbar = viewModel::clearSnackbar,
                         onResetBackup = viewModel::resetBackupState,
                         onRequestBatteryUnrestricted = viewModel::requestBatteryUnrestricted,
                         onOpenBatterySettings = viewModel::openBatterySettings,
                         onDismissBatteryDialog = viewModel::dismissBatteryDialog,
-                        onContinueAfterBattery = viewModel::continueBackupAfterBatteryPrompt
+                        onContinueAfterBattery = viewModel::continueBackupAfterBatteryPrompt,
+                        onToggleTheme = { viewModel.setDarkTheme(!settings.darkTheme) }
                     )
                 }
             }
@@ -120,7 +135,6 @@ class MainActivity : ComponentActivity() {
             ) {
                 needed += Manifest.permission.READ_EXTERNAL_STORAGE
             }
-            // Android 13+ only for notifications, but keep safe on 12-
         }
         if (needed.isNotEmpty()) {
             permissionLauncher.launch(needed.toTypedArray())

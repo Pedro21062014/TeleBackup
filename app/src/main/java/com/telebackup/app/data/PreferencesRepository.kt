@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,7 +19,10 @@ data class AppSettings(
     val chatId: String = "",
     val folderUris: Set<String> = emptySet(),
     val lastBackupAt: String = "",
-    val metadata: MetadataOptions = MetadataOptions()
+    val metadata: MetadataOptions = MetadataOptions(),
+    val darkTheme: Boolean = false,
+    val cloudIndexMessageId: Long = 0L,
+    val cloudIndexFileId: String = ""
 ) {
     val isConfigured: Boolean
         get() = botToken.isNotBlank() && chatId.isNotBlank()
@@ -30,6 +34,9 @@ class PreferencesRepository(private val context: Context) {
         val CHAT_ID = stringPreferencesKey("chat_id")
         val FOLDER_URIS = stringSetPreferencesKey("folder_uris")
         val LAST_BACKUP = stringPreferencesKey("last_backup")
+        val DARK_THEME = booleanPreferencesKey("dark_theme")
+        val CLOUD_INDEX_MSG = longPreferencesKey("cloud_index_msg_id")
+        val CLOUD_INDEX_FILE = stringPreferencesKey("cloud_index_file_id")
 
         val KEEP_ORIGINAL = booleanPreferencesKey("meta_keep_original")
         val STRIP_LOCATION = booleanPreferencesKey("meta_strip_location")
@@ -49,6 +56,9 @@ class PreferencesRepository(private val context: Context) {
             chatId = prefs[Keys.CHAT_ID].orEmpty(),
             folderUris = prefs[Keys.FOLDER_URIS] ?: emptySet(),
             lastBackupAt = prefs[Keys.LAST_BACKUP].orEmpty(),
+            darkTheme = prefs[Keys.DARK_THEME] ?: false,
+            cloudIndexMessageId = prefs[Keys.CLOUD_INDEX_MSG] ?: 0L,
+            cloudIndexFileId = prefs[Keys.CLOUD_INDEX_FILE].orEmpty(),
             metadata = MetadataOptions(
                 keepOriginalFile = prefs[Keys.KEEP_ORIGINAL] ?: true,
                 stripLocation = prefs[Keys.STRIP_LOCATION] ?: false,
@@ -88,6 +98,19 @@ class PreferencesRepository(private val context: Context) {
     suspend fun setLastBackup(timestamp: String) {
         context.dataStore.edit { prefs ->
             prefs[Keys.LAST_BACKUP] = timestamp
+        }
+    }
+
+    suspend fun setDarkTheme(dark: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.DARK_THEME] = dark
+        }
+    }
+
+    suspend fun setCloudIndexMeta(messageId: Long, fileId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.CLOUD_INDEX_MSG] = messageId
+            prefs[Keys.CLOUD_INDEX_FILE] = fileId
         }
     }
 

@@ -84,4 +84,6 @@ data class CloudMediaItem(
     val longitude: Double? = null
 ) {
     val sizeLabel: String get() = MediaItem.formatSize(size)
+    val dateLabel: String get() = CloudMediaStore.formatDate(uploadedAt)
+    val dateShort: String get() = CloudMediaStore.formatDateShort(uploadedAt)
 }

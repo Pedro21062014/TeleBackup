@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -87,7 +88,8 @@ fun SettingsScreen(
     onSaveMetadata: (MetadataOptions) -> Unit,
     onFixBattery: () -> Unit = {},
     onOpenBatterySettings: () -> Unit = {},
-    onBatteryStatusRefresh: () -> Unit = {}
+    onBatteryStatusRefresh: () -> Unit = {},
+    onToggleTheme: () -> Unit = {}
 ) {
     var token by remember { mutableStateOf(settings.botToken) }
     var chatId by remember { mutableStateOf(settings.chatId) }
@@ -118,13 +120,31 @@ fun SettingsScreen(
                     .clip(RoundedCornerShape(16.dp))
             )
             Spacer(Modifier.width(14.dp))
-            Column {
-                Text("TeleBackup", style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                Text("v1.1 · fotos, vídeos e nuvem", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("TeleBackup", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
+                Text("v1.4 · fotos, vídeos e nuvem", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            }
+            TextButton(onClick = onToggleTheme) {
+                Text(
+                    if (settings.darkTheme) "Tema claro" else "Tema escuro",
+                    color = TelegramBlue
+                )
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
+
+        SectionCard {
+            MetaSwitch(
+                icon = Icons.Outlined.Info,
+                title = if (settings.darkTheme) "Tema escuro" else "Tema claro",
+                subtitle = "Toque no switch para alternar",
+                checked = !settings.darkTheme,
+                onChecked = { onToggleTheme() }
+            )
+        }
+
+        Spacer(Modifier.height(20.dp))
 
         SectionHeader(
             title = "Bot do Telegram",
@@ -378,7 +398,7 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(24.dp))
         Text(
-            "v1.1.0 · Dados no aparelho + chat do Telegram",
+            "v1.4.0 · Nuvem restaura com as mesmas credenciais",
             style = MaterialTheme.typography.bodySmall,
             color = TextMuted,
             modifier = Modifier.align(Alignment.CenterHorizontally)

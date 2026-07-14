@@ -51,8 +51,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightCard
 import com.telebackup.app.ui.theme.NightElevated
 import com.telebackup.app.ui.theme.TelegramBlue
 import com.telebackup.app.ui.theme.TextMuted
@@ -60,19 +60,16 @@ import com.telebackup.app.ui.theme.TextSecondary
 
 @Composable
 fun GradientBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val surfaces = LocalAppSurfaces.current
+    val top = if (surfaces.isDark) Color(0xFF0B0F1A) else Color(0xFFF4F7FB)
+    val mid = if (surfaces.isDark) Color(0xFF0E1628) else Color(0xFFEEF3FA)
+    val bottom = if (surfaces.isDark) Color(0xFF0B1220) else Color(0xFFE8EEF7)
     Box(
         modifier = modifier
             .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0B0F1A),
-                        Color(0xFF0E1628),
-                        Color(0xFF0B1220)
-                    )
-                )
+                Brush.verticalGradient(colors = listOf(top, mid, bottom))
             )
             .drawBehind {
-                // soft blue glow top-right
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(Color(0x332AABEE), Color.Transparent),
@@ -102,15 +99,16 @@ fun SectionCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val surfaces = LocalAppSurfaces.current
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = NightCard.copy(alpha = 0.92f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        colors = CardDefaults.cardColors(containerColor = surfaces.card.copy(alpha = if (surfaces.isDark) 0.92f else 0.98f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (surfaces.isDark) 0.dp else 1.dp)
     ) {
         Box(
             modifier = Modifier
-                .border(1.dp, NightBorder.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                .border(1.dp, surfaces.border.copy(alpha = 0.7f), RoundedCornerShape(20.dp))
                 .padding(18.dp)
         ) {
             content()
@@ -234,14 +232,15 @@ fun SecondaryButton(
 
 @Composable
 fun StatChip(label: String, value: String, accent: Color = TelegramBlue) {
+    val surfaces = LocalAppSurfaces.current
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(NightElevated.copy(alpha = 0.7f))
-            .border(1.dp, NightBorder.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .background(surfaces.elevated.copy(alpha = if (surfaces.isDark) 0.7f else 0.95f))
+            .border(1.dp, surfaces.border.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = TextMuted)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = surfaces.textMuted)
         Spacer(Modifier.height(4.dp))
         Text(
             value,
@@ -254,16 +253,17 @@ fun StatChip(label: String, value: String, accent: Color = TelegramBlue) {
 
 @Composable
 fun SectionHeader(title: String, subtitle: String? = null, action: @Composable (() -> Unit)? = null) {
+    val surfaces = LocalAppSurfaces.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = Color.White)
+            Text(title, style = MaterialTheme.typography.titleLarge, color = surfaces.textPrimary)
             if (subtitle != null) {
                 Spacer(Modifier.height(2.dp))
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = surfaces.textSecondary)
             }
         }
         action?.invoke()

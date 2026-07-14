@@ -3,9 +3,6 @@ package com.telebackup.app.ui.screens
 import android.net.Uri
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +33,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SdStorage
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -61,12 +60,9 @@ import com.telebackup.app.ui.components.SectionCard
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.components.StatChip
 import com.telebackup.app.ui.theme.ErrorRose
-import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightElevated
-import com.telebackup.app.ui.theme.SuccessGreen
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
+import com.telebackup.app.util.ImageLoading
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,11 +71,15 @@ import java.util.Locale
 fun CloudGalleryScreen(
     items: List<CloudMediaItem>,
     isConfigured: Boolean,
+    isSyncing: Boolean = false,
     onOpen: (CloudMediaItem) -> Unit,
     onRemove: (String) -> Unit,
     onClear: () -> Unit,
+    onSync: () -> Unit = {},
     onGoConfig: () -> Unit
 ) {
+    val surfaces = LocalAppSurfaces.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -88,11 +88,30 @@ fun CloudGalleryScreen(
     ) {
         SectionHeader(
             title = "Nuvem",
-            subtitle = "Mídias enviadas ao Telegram por este app",
+            subtitle = "Persiste no Telegram · reabre com as mesmas credenciais",
             action = {
-                if (items.isNotEmpty()) {
-                    TextButton(onClick = onClear) {
-                        Text("Limpar", color = ErrorRose)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isConfigured) {
+                        IconButton(onClick = onSync, enabled = !isSyncing) {
+                            if (isSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = TelegramBlue
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Outlined.Refresh,
+                                    contentDescription = "Sincronizar",
+                                    tint = TelegramBlue
+                                )
+                            }
+                        }
+                    }
+                    if (items.isNotEmpty()) {
+                        TextButton(onClick = onClear) {
+                            Text("Limpar", color = ErrorRose)
+                        }
                     }
                 }
             }
@@ -106,7 +125,15 @@ fun CloudGalleryScreen(
             StatChip("Vídeos", "${items.count { it.isVideo }}", accent = Color(0xFFFF8A65))
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
+
+        Text(
+            "Cada item mostra a data de envio. Após reinstalar o app, cole o mesmo token e Group ID e toque em atualizar.",
+            style = MaterialTheme.typography.bodySmall,
+            color = surfaces.textMuted
+        )
+
+        Spacer(Modifier.height(12.dp))
 
         when {
             !isConfigured -> {
@@ -114,10 +141,19 @@ fun CloudGalleryScreen(
                     EmptyState(
                         icon = Icons.Outlined.CloudOff,
                         title = "Configure o bot primeiro",
-                        subtitle = "Com token e Group ID, os backups aparecem aqui",
+                        subtitle = "Com token e Group ID, a galeria é restaurada do Telegram",
                         actionLabel = "Ir para Config",
                         onAction = onGoConfig
                     )
+                }
+            }
+            isSyncing && items.isEmpty() -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = TelegramBlue)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Sincronizando nuvem…", color = surfaces.textSecondary)
+                    }
                 }
             }
             items.isEmpty() -> {
@@ -125,9 +161,9 @@ fun CloudGalleryScreen(
                     EmptyState(
                         icon = Icons.Outlined.Cloud,
                         title = "Nada na nuvem ainda",
-                        subtitle = "Faça um backup na Galeria — os itens enviados ficam listados aqui",
-                        actionLabel = null,
-                        onAction = null
+                        subtitle = "Faça um backup — o índice fica fixado no chat e reaparece após reinstalar",
+                        actionLabel = if (isConfigured) "Sincronizar" else null,
+                        onAction = if (isConfigured) onSync else null
                     )
                 }
             }
@@ -150,6 +186,9 @@ fun CloudGalleryScreen(
 
 @Composable
 private fun CloudThumb(item: CloudMediaItem, onClick: () -> Unit) {
+    val surfaces = LocalAppSurfaces.current
+    val context = LocalContext.current
+    val loader = androidx.compose.runtime.remember(context) { ImageLoading.imageLoader(context) }
     val model: Any? = when {
         item.localUri.isNotBlank() -> Uri.parse(item.localUri)
         else -> null
@@ -158,14 +197,15 @@ private fun CloudThumb(item: CloudMediaItem, onClick: () -> Unit) {
         modifier = Modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, NightBorder.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .border(1.dp, surfaces.border.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .background(NightElevated)
+            .background(surfaces.elevated)
     ) {
         if (model != null) {
             AsyncImage(
                 model = model,
                 contentDescription = item.name,
+                imageLoader = loader,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
@@ -180,7 +220,6 @@ private fun CloudThumb(item: CloudMediaItem, onClick: () -> Unit) {
             }
         }
 
-        // cloud badge
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -205,22 +244,46 @@ private fun CloudThumb(item: CloudMediaItem, onClick: () -> Unit) {
             )
         }
 
+        // Date badge
+        if (item.dateShort.isNotBlank()) {
+            Text(
+                item.dateShort,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(
-                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)))
                 )
                 .padding(6.dp)
         ) {
-            Text(
-                item.name,
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column {
+                Text(
+                    item.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (item.dateLabel.isNotBlank()) {
+                    Text(
+                        item.dateLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }
@@ -234,7 +297,7 @@ fun CloudViewerScreen(
     onRemove: () -> Unit
 ) {
     BackHandler(onBack = onClose)
-    val dateLabel = rememberDate(item.uploadedAt)
+    val dateLabel = item.dateLabel
 
     Box(
         modifier = Modifier
@@ -273,16 +336,15 @@ fun CloudViewerScreen(
             else -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Outlined.CloudOff, null, tint = TextSecondary, modifier = Modifier.size(48.dp))
+                        Icon(Icons.Outlined.CloudOff, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(48.dp))
                         Spacer(Modifier.height(12.dp))
-                        Text("Não foi possível carregar a mídia", color = TextSecondary)
-                        Text("Arquivo local pode ter sido removido", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                        Text("Não foi possível carregar a mídia", color = Color.White.copy(alpha = 0.8f))
+                        Text("Sincronize a nuvem ou verifique a conexão", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
 
-        // top bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -302,14 +364,13 @@ fun CloudViewerScreen(
             }
             Column(Modifier.weight(1f)) {
                 Text(item.name, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Enviado · $dateLabel", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                Text("Enviado · $dateLabel", color = Color.White.copy(alpha = 0.65f), style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = onRemove) {
                 Icon(Icons.Outlined.DeleteOutline, "Remover", tint = ErrorRose)
             }
         }
 
-        // bottom info
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -323,6 +384,7 @@ fun CloudViewerScreen(
                     if (item.isVideo) Icons.Outlined.Videocam else Icons.Outlined.Image,
                     if (item.isVideo) "Vídeo" else "Foto"
                 )
+                MetaChip(Icons.Outlined.Cloud, dateLabel)
                 if (item.hasLocation && item.latitude != null) {
                     MetaChip(
                         Icons.Outlined.LocationOn,
@@ -334,7 +396,7 @@ fun CloudViewerScreen(
                 Spacer(Modifier.height(10.dp))
                 Text(
                     item.caption,
-                    color = TextSecondary,
+                    color = Color.White.copy(alpha = 0.75f),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 6,
                     overflow = TextOverflow.Ellipsis
@@ -353,13 +415,8 @@ private fun MetaChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
             .background(Color.White.copy(alpha = 0.1f))
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        Icon(icon, null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+        Icon(icon, null, tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(6.dp))
-        Text(text, color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+        Text(text, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelMedium)
     }
-}
-
-@Composable
-private fun rememberDate(ts: Long): String {
-    return SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(ts))
 }

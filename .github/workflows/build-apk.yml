@@ -6,7 +6,7 @@ on:
       tag:
         description: "Release tag (ex: v1.3.2)"
         required: true
-        default: "v1.3.2"
+        default: "v1.4.0"
   push:
     tags:
       - "v*"
@@ -86,7 +86,7 @@ jobs:
           "$BT/aapt" dump badging "$APK" | head -8
           "$BT/apksigner" verify --verbose "$APK"
           cp "$APK" TeleBackup-signed.apk
-          cp "$APK" TeleBackup-v1.3.2-signed.apk
+          cp "$APK" TeleBackup-v1.4.0-signed.apk
           ls -lh TeleBackup-signed.apk
 
       - name: Upload build artifact
@@ -95,7 +95,7 @@ jobs:
           name: TeleBackup-APK
           path: |
             TeleBackup-signed.apk
-            TeleBackup-v1.3.2-signed.apk
+            TeleBackup-v1.4.0-signed.apk
 
       - name: Resolve tag name
         id: meta
@@ -117,18 +117,19 @@ jobs:
 
             APK assinado pelo Gradle (v1+v2+v3).
 
-            ### Correções
-            - Botão de bateria limpo (sem texto sobreposto)
-            - Abre o **modal nativo** do Android para segundo plano
-            - Notificação de progresso no backup
+            ### Novidades
+            - Vibração ao trocar de aba
+            - Tema claro (e escuro)
+            - Galeria Nuvem restaura após reinstalar com as mesmas credenciais
+            - Data de envio em cada item da nuvem
 
             ### Instalação
             1. Desinstale a versão antiga se necessário
             2. Instale o APK
-            3. Toque em **Permitir segundo plano** e aceite o aviso do sistema
+            3. Configure token + Group ID — a aba Nuvem sincroniza sozinha
           files: |
             TeleBackup-signed.apk
-            TeleBackup-v1.3.2-signed.apk
+            TeleBackup-v1.4.0-signed.apk
           draft: false
           prerelease: false
           make_latest: true

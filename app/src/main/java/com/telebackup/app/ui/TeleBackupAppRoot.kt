@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.telebackup.app.MediaFilter
 import com.telebackup.app.UiState
@@ -54,10 +55,10 @@ import com.telebackup.app.ui.screens.FoldersScreen
 import com.telebackup.app.ui.screens.GalleryScreen
 import com.telebackup.app.ui.screens.PhotoViewerScreen
 import com.telebackup.app.ui.screens.SettingsScreen
-import com.telebackup.app.ui.theme.NightSurface
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
 import com.telebackup.app.util.BatteryOptimization
+import com.telebackup.app.util.Haptics
 
 private data class Tab(val label: String, val icon: ImageVector)
 
@@ -84,17 +85,21 @@ fun TeleBackupAppRoot(
     onCloseCloud: () -> Unit,
     onRemoveCloud: (String) -> Unit,
     onClearCloud: () -> Unit,
+    onSyncCloud: () -> Unit,
     onStartBackup: () -> Unit,
     onClearSnackbar: () -> Unit,
     onResetBackup: () -> Unit,
     onRequestBatteryUnrestricted: () -> Unit,
     onOpenBatterySettings: () -> Unit,
     onDismissBatteryDialog: () -> Unit,
-    onContinueAfterBattery: () -> Unit
+    onContinueAfterBattery: () -> Unit,
+    onToggleTheme: () -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val view = LocalView.current
+    val surfaces = LocalAppSurfaces.current
 
     val tabs = listOf(
         Tab("Galeria", Icons.Outlined.PhotoLibrary),
@@ -124,7 +129,6 @@ fun TeleBackupAppRoot(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    // Native Android modal for unrestricted background
                     BatteryOptimization.requestIgnoreBatteryOptimizations(context)
                     onRequestBatteryUnrestricted()
                 }) {
@@ -133,16 +137,15 @@ fun TeleBackupAppRoot(
             },
             dismissButton = {
                 TextButton(onClick = onContinueAfterBattery) {
-                    Text("Agora não", color = TextMuted)
+                    Text("Agora não", color = surfaces.textMuted)
                 }
             },
-            containerColor = NightSurface,
-            titleContentColor = Color.White,
-            textContentColor = TextMuted
+            containerColor = surfaces.surface,
+            titleContentColor = surfaces.textPrimary,
+            textContentColor = surfaces.textMuted
         )
     }
 
-    // Fullscreen local viewer
     if (ui.viewerItem != null) {
         PhotoViewerScreen(
             items = filteredMedia.ifEmpty { ui.media },
@@ -152,7 +155,6 @@ fun TeleBackupAppRoot(
         return
     }
 
-    // Fullscreen cloud viewer
     if (ui.cloudViewer != null) {
         CloudViewerScreen(
             item = ui.cloudViewer,
@@ -175,22 +177,30 @@ fun TeleBackupAppRoot(
                 SnackbarHost(snackbarHostState) { data ->
                     Snackbar(
                         snackbarData = data,
-                        containerColor = NightSurface,
-                        contentColor = Color.White,
+                        containerColor = surfaces.surface,
+                        contentColor = surfaces.textPrimary,
                         actionColor = TelegramBlue
                     )
                 }
             },
             bottomBar = {
                 NavigationBar(
-                    containerColor = NightSurface.copy(alpha = 0.96f),
-                    contentColor = Color.White,
+                    containerColor = surfaces.surface.copy(alpha = 0.98f),
+                    contentColor = surfaces.textPrimary,
                     tonalElevation = 0.dp
                 ) {
                     tabs.forEachIndexed { index, t ->
                         NavigationBarItem(
                             selected = tab == index,
-                            onClick = { tab = index },
+                            onClick = {
+                                if (tab != index) {
+                                    Haptics.tabSwitch(context, view)
+                                    tab = index
+                                    if (index == 1 && settings.isConfigured) {
+                                        onSyncCloud()
+                                    }
+                                }
+                            },
                             icon = { Icon(t.icon, contentDescription = t.label) },
                             label = {
                                 Text(t.label, style = MaterialTheme.typography.labelMedium)
@@ -198,8 +208,8 @@ fun TeleBackupAppRoot(
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = TelegramBlue,
                                 selectedTextColor = TelegramBlue,
-                                unselectedIconColor = TextMuted,
-                                unselectedTextColor = TextMuted,
+                                unselectedIconColor = surfaces.textMuted,
+                                unselectedTextColor = surfaces.textMuted,
                                 indicatorColor = TelegramBlue.copy(alpha = 0.15f)
                             )
                         )
@@ -235,15 +245,23 @@ fun TeleBackupAppRoot(
                             onSelectAll = onSelectAll,
                             onClear = onClearSelection,
                             onOpen = onOpenViewer,
-                            onBackup = { tab = 3 }
+                            onBackup = {
+                                Haptics.tabSwitch(context, view)
+                                tab = 3
+                            }
                         )
                         1 -> CloudGalleryScreen(
                             items = cloudItems,
                             isConfigured = settings.isConfigured,
+                            isSyncing = ui.isSyncingCloud,
                             onOpen = onOpenCloud,
                             onRemove = onRemoveCloud,
                             onClear = onClearCloud,
-                            onGoConfig = { tab = 4 }
+                            onSync = onSyncCloud,
+                            onGoConfig = {
+                                Haptics.tabSwitch(context, view)
+                                tab = 4
+                            }
                         )
                         2 -> FoldersScreen(
                             folderUris = settings.folderUris,
@@ -259,9 +277,15 @@ fun TeleBackupAppRoot(
                             batteryOptimized = ui.batteryOptimized,
                             onStart = onStartBackup,
                             onReset = onResetBackup,
-                            onGoConfig = { tab = 4 },
-                            onGoCloud = { tab = 1 },
-                            onBatteryStatusRefresh = { /* refreshed onResume */ }
+                            onGoConfig = {
+                                Haptics.tabSwitch(context, view)
+                                tab = 4
+                            },
+                            onGoCloud = {
+                                Haptics.tabSwitch(context, view)
+                                tab = 1
+                            },
+                            onBatteryStatusRefresh = { }
                         )
                         else -> SettingsScreen(
                             settings = settings,
@@ -272,7 +296,8 @@ fun TeleBackupAppRoot(
                             onSave = onSaveConfig,
                             onTest = onTestConnection,
                             onSaveMetadata = onSaveMetadata,
-                            onBatteryStatusRefresh = { /* refreshed onResume */ }
+                            onBatteryStatusRefresh = { },
+                            onToggleTheme = onToggleTheme
                         )
                     }
                 }
