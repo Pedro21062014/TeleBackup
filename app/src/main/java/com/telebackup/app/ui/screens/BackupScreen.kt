@@ -335,6 +335,7 @@ fun BackupScreen(
 
 @Composable
 private fun TipLine(text: String) {
+    val surfaces = LocalAppSurfaces.current
     Row {
         Text("•", color = TelegramBlue)
         Spacer(Modifier.width(8.dp))

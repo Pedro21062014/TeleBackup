@@ -110,7 +110,7 @@ fun GalleryScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(NightElevated.copy(alpha = 0.55f))
+                .background(surfaces.elevated.copy(alpha = if (surfaces.isDark) 0.55f else 1f))
                 .border(1.dp, surfaces.border.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -285,7 +285,7 @@ private fun MediaThumb(
                 color = if (selected) TelegramBlue else surfaces.border.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .background(NightElevated)
+            .background(surfaces.elevated)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -301,7 +301,7 @@ private fun MediaThumb(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(NightElevated)
+                        .background(surfaces.elevated)
                 )
             },
             error = {

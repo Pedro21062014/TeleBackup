@@ -166,7 +166,7 @@ fun SettingsScreen(
                         Icon(
                             if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                             contentDescription = "Mostrar token",
-                            tint = TextSecondary
+                            tint = surfaces.textSecondary
                         )
                     }
                 }
@@ -428,13 +428,13 @@ private fun MetaSwitch(
                 .background(surfaces.elevated),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = if (enabled) TelegramBlue else TextMuted, modifier = Modifier.size(18.dp))
+            Icon(icon, null, tint = if (enabled) TelegramBlue else surfaces.textMuted, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
-                color = if (enabled) Color.White else TextMuted,
+                color = if (enabled) surfaces.textPrimary else surfaces.textMuted,
                 style = MaterialTheme.typography.bodyLarge
             )
             if (subtitle != null) {
@@ -448,7 +448,7 @@ private fun MetaSwitch(
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = TelegramBlue,
-                uncheckedThumbColor = TextSecondary,
+                uncheckedThumbColor = surfaces.textSecondary,
                 uncheckedTrackColor = surfaces.border
             )
         )
