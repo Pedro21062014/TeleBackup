@@ -126,9 +126,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _ui.update { it.copy(showBatteryDialog = false) }
     }
 
+    /**
+     * Prefer calling from Compose with LocalContext (Activity) so the system
+     * shows the native dialog. This fallback uses application context.
+     */
     fun requestBatteryUnrestricted() {
         BatteryOptimization.requestIgnoreBatteryOptimizations(appContext)
-        // status will refresh on resume
     }
 
     fun openBatterySettings() {

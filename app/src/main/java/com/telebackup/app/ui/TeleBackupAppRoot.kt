@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.telebackup.app.MediaFilter
 import com.telebackup.app.UiState
@@ -56,6 +57,7 @@ import com.telebackup.app.ui.screens.SettingsScreen
 import com.telebackup.app.ui.theme.NightSurface
 import com.telebackup.app.ui.theme.TelegramBlue
 import com.telebackup.app.ui.theme.TextMuted
+import com.telebackup.app.util.BatteryOptimization
 
 private data class Tab(val label: String, val icon: ImageVector)
 
@@ -92,6 +94,7 @@ fun TeleBackupAppRoot(
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     val tabs = listOf(
         Tab("Galeria", Icons.Outlined.PhotoLibrary),
@@ -114,21 +117,23 @@ fun TeleBackupAppRoot(
             title = { Text("Permitir segundo plano") },
             text = {
                 Text(
-                    "Para o backup continuar com a tela desligada e mostrar a notificação de progresso, " +
-                        "desative a otimização de bateria para o TeleBackup.\n\n" +
-                        "Toque em “Desativar otimização” e escolha Sem restrições / Não otimizar."
+                    "O Android precisa autorizar o TeleBackup a rodar em segundo plano " +
+                        "para o backup não parar com a tela desligada.\n\n" +
+                        "Toque em “Permitir” para abrir o aviso nativo do sistema."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
+                    // Native Android modal for unrestricted background
+                    BatteryOptimization.requestIgnoreBatteryOptimizations(context)
                     onRequestBatteryUnrestricted()
                 }) {
-                    Text("Desativar otimização", color = TelegramBlue)
+                    Text("Permitir", color = TelegramBlue)
                 }
             },
             dismissButton = {
                 TextButton(onClick = onContinueAfterBattery) {
-                    Text("Continuar mesmo assim", color = TextMuted)
+                    Text("Agora não", color = TextMuted)
                 }
             },
             containerColor = NightSurface,
@@ -256,8 +261,7 @@ fun TeleBackupAppRoot(
                             onReset = onResetBackup,
                             onGoConfig = { tab = 4 },
                             onGoCloud = { tab = 1 },
-                            onFixBattery = onRequestBatteryUnrestricted,
-                            onOpenBatterySettings = onOpenBatterySettings
+                            onBatteryStatusRefresh = { /* refreshed onResume */ }
                         )
                         else -> SettingsScreen(
                             settings = settings,
@@ -268,8 +272,7 @@ fun TeleBackupAppRoot(
                             onSave = onSaveConfig,
                             onTest = onTestConnection,
                             onSaveMetadata = onSaveMetadata,
-                            onFixBattery = onRequestBatteryUnrestricted,
-                            onOpenBatterySettings = onOpenBatterySettings
+                            onBatteryStatusRefresh = { /* refreshed onResume */ }
                         )
                     }
                 }

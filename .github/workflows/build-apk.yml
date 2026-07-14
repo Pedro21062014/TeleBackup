@@ -6,7 +6,7 @@ on:
       tag:
         description: "Release tag (ex: v1.3.1)"
         required: true
-        default: "v1.3.1"
+        default: "v1.3.2"
       update_existing:
         description: "Update existing release if tag exists"
         required: false
@@ -73,8 +73,8 @@ jobs:
           unzip -t "$APK" | tail -5
           cp "$APK" TeleBackup-signed.apk
           # Also name with version for release clarity
-          cp "$APK" TeleBackup-v1.3.1-signed.apk
-          ls -lh TeleBackup-signed.apk TeleBackup-v1.3.1-signed.apk
+          cp "$APK" TeleBackup-v1.3.2-signed.apk
+          ls -lh TeleBackup-signed.apk TeleBackup-v1.3.2-signed.apk
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -116,7 +116,7 @@ jobs:
             - Fotos + vídeos, galeria na nuvem, metadados
           files: |
             TeleBackup-signed.apk
-            TeleBackup-v1.3.1-signed.apk
+            TeleBackup-v1.3.2-signed.apk
           draft: false
           prerelease: false
           fail_on_unmatched_files: true

@@ -19,14 +19,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationOff
-import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Videocam
@@ -44,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.telebackup.app.data.AppSettings
 import com.telebackup.app.data.BackupProgress
 import com.telebackup.app.data.BackupState
+import com.telebackup.app.ui.components.BatteryPermissionCard
 import com.telebackup.app.ui.components.PrimaryButton
 import com.telebackup.app.ui.components.ProgressBlock
 import com.telebackup.app.ui.components.PulsingDot
@@ -72,8 +71,9 @@ fun BackupScreen(
     onReset: () -> Unit,
     onGoConfig: () -> Unit,
     onGoCloud: () -> Unit,
-    onFixBattery: () -> Unit,
-    onOpenBatterySettings: () -> Unit
+    onFixBattery: () -> Unit = {},
+    onOpenBatterySettings: () -> Unit = {},
+    onBatteryStatusRefresh: () -> Unit = {}
 ) {
     val configured = settings.isConfigured
     val isUploading = backup.state == BackupState.Uploading
@@ -177,57 +177,10 @@ fun BackupScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Battery / background card
-        SectionCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Outlined.BatterySaver,
-                    null,
-                    tint = if (batteryOptimized) WarningAmber else SuccessGreen,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        if (batteryOptimized) "Otimização de bateria ativa"
-                        else "Segundo plano liberado",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        if (batteryOptimized)
-                            "Desative a otimização para o backup não parar com a tela desligada"
-                        else
-                            "O app pode continuar enviando em segundo plano",
-                        color = TextSecondary,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-            if (batteryOptimized) {
-                Spacer(Modifier.height(12.dp))
-                PrimaryButton(
-                    text = "Desativar otimização de bateria",
-                    onClick = onFixBattery,
-                    icon = Icons.Outlined.BatterySaver
-                )
-                Spacer(Modifier.height(8.dp))
-                SecondaryButton(
-                    text = "Abrir configurações de bateria",
-                    onClick = onOpenBatterySettings
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.NotificationsActive, null, tint = TelegramBlue, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Durante o envio, uma notificação mostra o progresso (ex.: 12/50).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted
-                )
-            }
-        }
+        BatteryPermissionCard(
+            batteryOptimized = batteryOptimized,
+            onStatusMaybeChanged = onBatteryStatusRefresh
+        )
 
         Spacer(Modifier.height(16.dp))
 
