@@ -23,6 +23,7 @@ captures/
 *.keystore
 *.pem
 secrets.properties
+keystore.properties
 
 # Kotlin
 .kotlin/

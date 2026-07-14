@@ -1,0 +1,114 @@
+name: Build & Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (ex: v1.3.1)"
+        required: true
+        default: "v1.3.1"
+      update_existing:
+        description: "Update existing release if tag exists"
+        required: false
+        default: "true"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "Missing KEYSTORE_BASE64 secret"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > telebackup.jks
+          ls -la telebackup.jks
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build signed release APK
+        env:
+          KEYSTORE_PATH: telebackup.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          ls -lh app/build/outputs/apk/release/
+
+      - name: Verify APK
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*-release.apk | head -1)
+          echo "APK=$APK"
+          $ANDROID_HOME/build-tools/*/aapt dump badging "$APK" | head -5
+          $ANDROID_HOME/build-tools/*/apksigner verify --verbose "$APK"
+          unzip -t "$APK" | tail -3
+          cp "$APK" TeleBackup-signed.apk
+          ls -lh TeleBackup-signed.apk
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeleBackup-APK
+          path: TeleBackup-signed.apk
+          if-no-files-found: error
+
+      - name: Resolve tag name
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Using tag: $TAG"
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: TeleBackup ${{ steps.meta.outputs.tag }}
+          body: |
+            ## TeleBackup ${{ steps.meta.outputs.tag }}
+
+            APK **assinado pelo Gradle** via GitHub Actions (v1+v2+v3).
+
+            ### Instalação
+            1. Baixe o APK abaixo
+            2. Ative **Fontes desconhecidas**
+            3. Se já tiver uma versão antiga com outra assinatura, **desinstale** antes
+
+            ### Inclui
+            - Notificação de progresso do backup
+            - Segundo plano (Foreground Service)
+            - Pedido para desativar otimização de bateria
+            - Fotos + vídeos, galeria na nuvem, metadados
+          files: TeleBackup-signed.apk
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
