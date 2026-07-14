@@ -4,13 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (ex: v1.3.1)"
+        description: "Release tag (ex: v1.3.2)"
         required: true
         default: "v1.3.2"
-      update_existing:
-        description: "Update existing release if tag exists"
-        required: false
-        default: "true"
   push:
     tags:
       - "v*"
@@ -31,22 +27,45 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/android-sdk
+          key: android-sdk-34-${{ runner.os }}
+
+      - name: Install Android SDK cmdline-tools
+        run: |
+          set -e
+          SDK_ROOT="${RUNNER_TEMP}/android-sdk"
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          cd /tmp
+          curl -fsSL -o cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q -o cmdtools.zip -d "$SDK_ROOT/cmdline-tools"
+          rm -rf "$SDK_ROOT/cmdline-tools/latest"
+          mv "$SDK_ROOT/cmdline-tools/cmdline-tools" "$SDK_ROOT/cmdline-tools/latest"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: Accept licenses and install packages
+        run: |
+          set -e
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/tmp/licenses.txt || true
+          sdkmanager --sdk_root="$ANDROID_HOME" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "platform-tools"
+          ls "$ANDROID_HOME/platforms"
+          ls "$ANDROID_HOME/build-tools"
 
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "Missing KEYSTORE_BASE64 secret"
-            exit 1
-          fi
           echo "$KEYSTORE_BASE64" | base64 -d > telebackup.jks
           ls -la telebackup.jks
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
 
       - name: Build signed release APK
         env:
@@ -55,7 +74,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # lintVital disabled in app/build.gradle.kts (checkReleaseBuilds=false)
+          chmod +x gradlew
           ./gradlew :app:assembleRelease --stacktrace
           ls -lh app/build/outputs/apk/release/
 
@@ -63,25 +82,20 @@ jobs:
         run: |
           set -e
           APK=$(ls app/build/outputs/apk/release/*-release.apk | head -1)
-          echo "APK=$APK"
-          ls -lh "$APK"
-          # Pick one build-tools version (glob must not expand to multiple commands)
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          echo "Using build-tools: $BT"
+          BT="$ANDROID_HOME/build-tools/34.0.0"
           "$BT/aapt" dump badging "$APK" | head -8
           "$BT/apksigner" verify --verbose "$APK"
-          unzip -t "$APK" | tail -5
           cp "$APK" TeleBackup-signed.apk
-          # Also name with version for release clarity
           cp "$APK" TeleBackup-v1.3.2-signed.apk
-          ls -lh TeleBackup-signed.apk TeleBackup-v1.3.2-signed.apk
+          ls -lh TeleBackup-signed.apk
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: TeleBackup-APK
-          path: TeleBackup-signed.apk
-          if-no-files-found: error
+          path: |
+            TeleBackup-signed.apk
+            TeleBackup-v1.3.2-signed.apk
 
       - name: Resolve tag name
         id: meta
@@ -92,7 +106,6 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Using tag: $TAG"
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -102,24 +115,22 @@ jobs:
           body: |
             ## TeleBackup ${{ steps.meta.outputs.tag }}
 
-            APK **assinado pelo Gradle** via GitHub Actions (v1+v2+v3).
+            APK assinado pelo Gradle (v1+v2+v3).
+
+            ### Correções
+            - Botão de bateria limpo (sem texto sobreposto)
+            - Abre o **modal nativo** do Android para segundo plano
+            - Notificação de progresso no backup
 
             ### Instalação
-            1. Baixe o APK abaixo
-            2. Ative **Fontes desconhecidas**
-            3. Se já tiver uma versão antiga com outra assinatura, **desinstale** antes
-
-            ### Inclui
-            - Notificação de progresso do backup
-            - Segundo plano (Foreground Service)
-            - Pedido para desativar otimização de bateria
-            - Fotos + vídeos, galeria na nuvem, metadados
+            1. Desinstale a versão antiga se necessário
+            2. Instale o APK
+            3. Toque em **Permitir segundo plano** e aceite o aviso do sistema
           files: |
             TeleBackup-signed.apk
             TeleBackup-v1.3.2-signed.apk
           draft: false
           prerelease: false
-          fail_on_unmatched_files: true
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
