@@ -43,11 +43,8 @@ import com.telebackup.app.ui.components.PrimaryButton
 import com.telebackup.app.ui.components.SectionCard
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.theme.ErrorRose
-import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightElevated
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
 
 @Composable
 fun FoldersScreen(
@@ -56,6 +53,7 @@ fun FoldersScreen(
     onRemoveFolder: (String) -> Unit,
     onRefresh: () -> Unit = {}
 ) {
+    val surfaces = LocalAppSurfaces.current
     // onRefresh reserved for pull-to-refresh if needed
     @Suppress("UNUSED_PARAMETER")
     val _refresh = onRefresh
@@ -109,7 +107,7 @@ fun FoldersScreen(
             Text(
                 "${folderUris.size} pasta(s) selecionada(s)",
                 style = MaterialTheme.typography.labelLarge,
-                color = TextSecondary
+                color = surfaces.textSecondary
             )
             Spacer(Modifier.height(10.dp))
             LazyColumn(
@@ -130,6 +128,7 @@ fun FoldersScreen(
 
 @Composable
 private fun FolderRow(uriStr: String, onRemove: () -> Unit) {
+    val surfaces = LocalAppSurfaces.current
     val name = try {
         val uri = Uri.parse(uriStr)
         val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
@@ -142,8 +141,8 @@ private fun FolderRow(uriStr: String, onRemove: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(NightElevated.copy(alpha = 0.65f))
-            .border(1.dp, NightBorder.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+            .background(surfaces.elevated.copy(alpha = if (surfaces.isDark) 0.65f else 1f))
+            .border(1.dp, surfaces.border.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -161,14 +160,14 @@ private fun FolderRow(uriStr: String, onRemove: () -> Unit) {
             Text(
                 name,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
+                color = surfaces.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 "Acesso persistente · somente leitura",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextMuted,
+                color = surfaces.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
