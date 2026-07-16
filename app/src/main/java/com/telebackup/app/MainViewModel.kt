@@ -16,6 +16,9 @@ import com.telebackup.app.data.MetadataOptions
 import com.telebackup.app.data.TelegramUploader
 import com.telebackup.app.service.BackupRuntime
 import com.telebackup.app.service.BackupService
+import com.telebackup.app.update.AppUpdateManager
+import com.telebackup.app.update.UpdatePhase
+import com.telebackup.app.update.UpdateUiState
 import com.telebackup.app.util.BatteryOptimization
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -26,6 +29,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,11 +47,14 @@ data class UiState(
     val cloudViewer: CloudMediaItem? = null,
     val cloudFileUrl: String? = null,
     val isLoadingCloudUrl: Boolean = false,
+    val cloudUrlByFileId: Map<String, String> = emptyMap(),
+    val cloudLoadingIds: Set<String> = emptySet(),
     val isSyncingCloud: Boolean = false,
     val snackbar: String? = null,
     val filter: MediaFilter = MediaFilter.All,
     val batteryOptimized: Boolean = true,
-    val showBatteryDialog: Boolean = false
+    val showBatteryDialog: Boolean = false,
+    val update: UpdateUiState = UpdateUiState()
 )
 
 enum class MediaFilter { All, Photos, Videos }
@@ -59,6 +66,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val uploader = TelegramUploader(app)
     private val cloudStore = CloudMediaStore(app)
     private val cloudIndex = CloudIndexRemote(app)
+    private val updateManager = AppUpdateManager(app)
+    private var downloadedApk: File? = null
 
     val settings: StateFlow<AppSettings> = prefs.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
@@ -74,6 +83,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { cloudStore.load() }
+        // Auto-check for updates shortly after launch
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1800)
+            checkForAppUpdate(silent = true)
+        }
 
         // When credentials become available, restore remote cloud index
         viewModelScope.launch {
@@ -348,37 +362,108 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openCloudViewer(item: CloudMediaItem) {
-        viewModelScope.launch {
-            _ui.update {
-                it.copy(
-                    cloudViewer = item,
-                    cloudFileUrl = null,
-                    isLoadingCloudUrl = true
+        _ui.update {
+            it.copy(
+                cloudViewer = item,
+                cloudFileUrl = it.cloudUrlByFileId[item.fileId] ?: item.localUri.takeIf { u -> u.isNotBlank() },
+                isLoadingCloudUrl = item.fileId !in it.cloudUrlByFileId && item.localUri.isBlank()
+            )
+        }
+        // Resolve current + neighbors for fast swipe
+        ensureCloudUrlsAround(item)
+    }
+
+    fun onCloudPageChanged(item: CloudMediaItem) {
+        _ui.update { it.copy(cloudViewer = item) }
+        ensureCloudUrlsAround(item)
+    }
+
+    private fun ensureCloudUrlsAround(center: CloudMediaItem) {
+        val all = cloudStore.items.value
+        val idx = all.indexOfFirst { it.id == center.id }.coerceAtLeast(0)
+        val window = all.subList(
+            (idx - 1).coerceAtLeast(0),
+            (idx + 3).coerceAtMost(all.size)
+        )
+        window.forEach { resolveCloudUrl(it) }
+    }
+
+    private fun resolveCloudUrl(item: CloudMediaItem) {
+        // already have full url
+        if (item.fileId.isNotBlank() && item.fileId in _ui.value.cloudUrlByFileId) return
+        // local uri available
+        if (item.localUri.isNotBlank()) {
+            _ui.update { state ->
+                val map = state.cloudUrlByFileId.toMutableMap()
+                if (item.fileId.isNotBlank()) map[item.fileId] = item.localUri
+                state.copy(
+                    cloudUrlByFileId = map,
+                    isLoadingCloudUrl = if (state.cloudViewer?.id == item.id) false else state.isLoadingCloudUrl,
+                    cloudFileUrl = if (state.cloudViewer?.id == item.id) item.localUri else state.cloudFileUrl
                 )
             }
-            val token = settings.value.botToken
-            val prefer = item.thumbFileId.ifBlank { item.fileId }
-            val url = if (token.isNotBlank() && prefer.isNotBlank()) {
-                uploader.getFileUrl(token, prefer)
-                    ?: if (item.fileId.isNotBlank() && item.fileId != prefer) {
-                        uploader.getFileUrl(token, item.fileId)
-                    } else null
-            } else null
-            val fullUrl = if (token.isNotBlank() && item.fileId.isNotBlank()) {
-                uploader.getFileUrl(token, item.fileId) ?: url
-            } else url
-            val local = item.localUri.takeIf { it.isNotBlank() }
-            _ui.update {
-                it.copy(
-                    cloudFileUrl = fullUrl ?: local,
-                    isLoadingCloudUrl = false
-                )
+            // still try telegram url in background for better quality if needed
+        }
+
+        val token = settings.value.botToken
+        if (token.isBlank() || item.fileId.isBlank()) {
+            if (item.localUri.isBlank()) {
+                _ui.update {
+                    it.copy(
+                        isLoadingCloudUrl = if (it.cloudViewer?.id == item.id) false else it.isLoadingCloudUrl
+                    )
+                }
+            }
+            return
+        }
+
+        _ui.update { it.copy(cloudLoadingIds = it.cloudLoadingIds + item.fileId) }
+        viewModelScope.launch {
+            try {
+                val fullUrl = uploader.getFileUrl(token, item.fileId)
+                val thumbUrl = if (item.thumbFileId.isNotBlank()) {
+                    uploader.getFileUrl(token, item.thumbFileId)
+                } else null
+                val chosen = fullUrl ?: thumbUrl ?: item.localUri.takeIf { it.isNotBlank() }
+                _ui.update { state ->
+                    val map = state.cloudUrlByFileId.toMutableMap()
+                    if (fullUrl != null) map[item.fileId] = fullUrl
+                    if (thumbUrl != null && item.thumbFileId.isNotBlank()) {
+                        map[item.thumbFileId] = thumbUrl
+                    }
+                    // fallback map by fileId to local if no remote
+                    if (fullUrl == null && chosen != null) map[item.fileId] = chosen
+                    state.copy(
+                        cloudUrlByFileId = map,
+                        cloudLoadingIds = state.cloudLoadingIds - item.fileId,
+                        isLoadingCloudUrl = if (state.cloudViewer?.id == item.id) false else state.isLoadingCloudUrl,
+                        cloudFileUrl = if (state.cloudViewer?.id == item.id) {
+                            map[item.fileId] ?: chosen ?: state.cloudFileUrl
+                        } else state.cloudFileUrl
+                    )
+                }
+            } catch (_: Exception) {
+                _ui.update { state ->
+                    state.copy(
+                        cloudLoadingIds = state.cloudLoadingIds - item.fileId,
+                        isLoadingCloudUrl = if (state.cloudViewer?.id == item.id) false else state.isLoadingCloudUrl,
+                        cloudFileUrl = if (state.cloudViewer?.id == item.id) {
+                            item.localUri.takeIf { it.isNotBlank() } ?: state.cloudFileUrl
+                        } else state.cloudFileUrl
+                    )
+                }
             }
         }
     }
 
     fun closeCloudViewer() {
-        _ui.update { it.copy(cloudViewer = null, cloudFileUrl = null, isLoadingCloudUrl = false) }
+        _ui.update {
+            it.copy(
+                cloudViewer = null,
+                cloudFileUrl = null,
+                isLoadingCloudUrl = false
+            )
+        }
     }
 
     fun removeCloudItem(id: String) {
@@ -478,5 +563,185 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             BackupRuntime.resetIfIdle()
             _ui.update { it.copy(backup = BackupProgress()) }
         }
+    }
+
+    // ── In-app updater ──────────────────────────────────────────────
+
+    fun checkForAppUpdate(silent: Boolean = false) {
+        if (_ui.value.update.phase == UpdatePhase.Downloading ||
+            _ui.value.update.phase == UpdatePhase.Checking
+        ) return
+
+        viewModelScope.launch {
+            _ui.update {
+                it.copy(
+                    update = it.update.copy(
+                        phase = UpdatePhase.Checking,
+                        visible = !silent,
+                        message = "Consultando GitHub…",
+                        progress = 0f
+                    )
+                )
+            }
+            val result = updateManager.checkForUpdate()
+            result.fold(
+                onSuccess = { info ->
+                    if (info == null) {
+                        _ui.update {
+                            it.copy(
+                                update = if (silent) UpdateUiState()
+                                else UpdateUiState(
+                                    phase = UpdatePhase.UpToDate,
+                                    visible = true,
+                                    message = "Você já está na versão ${updateManager.currentVersionName()}"
+                                ),
+                                snackbar = if (silent) it.snackbar
+                                else "App atualizado (v${updateManager.currentVersionName()})"
+                            )
+                        }
+                        if (!silent) {
+                            // auto-hide "up to date" banner
+                            kotlinx.coroutines.delay(2500)
+                            dismissUpdateBanner()
+                        }
+                    } else {
+                        _ui.update {
+                            it.copy(
+                                update = UpdateUiState(
+                                    phase = UpdatePhase.Available,
+                                    info = info,
+                                    visible = true,
+                                    message = "Sua: v${updateManager.currentVersionName()} → Nova: ${info.tag}"
+                                )
+                            )
+                        }
+                    }
+                },
+                onFailure = { e ->
+                    _ui.update {
+                        it.copy(
+                            update = if (silent) UpdateUiState()
+                            else UpdateUiState(
+                                phase = UpdatePhase.Error,
+                                visible = true,
+                                message = e.message ?: "Erro ao verificar"
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun startUpdateDownload() {
+        val info = _ui.value.update.info ?: return
+        if (_ui.value.update.phase == UpdatePhase.Downloading) return
+        viewModelScope.launch {
+            _ui.update {
+                it.copy(
+                    update = it.update.copy(
+                        phase = UpdatePhase.Downloading,
+                        visible = true,
+                        progress = 0f,
+                        downloadedBytes = 0,
+                        totalBytes = info.sizeBytes,
+                        message = "Baixando ${info.apkName}…"
+                    )
+                )
+            }
+            val result = updateManager.downloadApk(info) { downloaded, total ->
+                val progress = if (total > 0) downloaded.toFloat() / total else 0f
+                _ui.update { state ->
+                    state.copy(
+                        update = state.update.copy(
+                            phase = UpdatePhase.Downloading,
+                            progress = progress.coerceIn(0f, 1f),
+                            downloadedBytes = downloaded,
+                            totalBytes = if (total > 0) total else state.update.totalBytes,
+                            message = "Baixando atualização…"
+                        )
+                    )
+                }
+            }
+            result.fold(
+                onSuccess = { file ->
+                    downloadedApk = file
+                    _ui.update {
+                        it.copy(
+                            update = it.update.copy(
+                                phase = UpdatePhase.ReadyToInstall,
+                                progress = 1f,
+                                message = "Download concluído · ${info.tag}",
+                                visible = true
+                            )
+                        )
+                    }
+                },
+                onFailure = { e ->
+                    _ui.update {
+                        it.copy(
+                            update = it.update.copy(
+                                phase = UpdatePhase.Error,
+                                message = e.message ?: "Falha no download",
+                                visible = true
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun installDownloadedUpdate(activity: android.app.Activity) {
+        val file = downloadedApk
+        if (file == null || !file.exists()) {
+            _ui.update {
+                it.copy(
+                    update = it.update.copy(
+                        phase = UpdatePhase.Error,
+                        message = "Arquivo não encontrado — baixe de novo",
+                        visible = true
+                    )
+                )
+            }
+            return
+        }
+        if (!updateManager.canInstallPackages()) {
+            _ui.update {
+                it.copy(
+                    snackbar = "Permita instalar apps desconhecidos para o TeleBackup",
+                    update = it.update.copy(
+                        phase = UpdatePhase.ReadyToInstall,
+                        message = "Autorize instalação e toque em Instalar"
+                    )
+                )
+            }
+            updateManager.openUnknownSourcesSettings(activity)
+            return
+        }
+        _ui.update {
+            it.copy(
+                update = it.update.copy(
+                    phase = UpdatePhase.Installing,
+                    message = "Abrindo instalador…"
+                )
+            )
+        }
+        val ok = updateManager.installApk(file, activity)
+        if (!ok) {
+            _ui.update {
+                it.copy(
+                    update = it.update.copy(
+                        phase = UpdatePhase.Error,
+                        message = "Não foi possível abrir o instalador"
+                    )
+                )
+            }
+        }
+    }
+
+    fun dismissUpdateBanner() {
+        if (_ui.value.update.phase == UpdatePhase.Downloading) return
+        _ui.update { it.copy(update = UpdateUiState()) }
     }
 }

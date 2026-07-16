@@ -6,7 +6,7 @@ on:
       tag:
         description: "Release tag (ex: v1.3.2)"
         required: true
-        default: "v1.4.0"
+        default: "v1.6.1"
   push:
     tags:
       - "v*"
@@ -86,7 +86,7 @@ jobs:
           "$BT/aapt" dump badging "$APK" | head -8
           "$BT/apksigner" verify --verbose "$APK"
           cp "$APK" TeleBackup-signed.apk
-          cp "$APK" TeleBackup-v1.4.0-signed.apk
+          cp "$APK" TeleBackup-v1.6.1-signed.apk
           ls -lh TeleBackup-signed.apk
 
       - name: Upload build artifact
@@ -95,7 +95,7 @@ jobs:
           name: TeleBackup-APK
           path: |
             TeleBackup-signed.apk
-            TeleBackup-v1.4.0-signed.apk
+            TeleBackup-v1.6.1-signed.apk
 
       - name: Resolve tag name
         id: meta
@@ -117,7 +117,22 @@ jobs:
 
             APK assinado pelo Gradle (v1+v2+v3).
 
+            versionCode: 11
+            versionName: 1.6.1
+
             ### Novidades
+            - Corrigido detector de atualização (não fica pedindo update à toa)
+            - Compara versionName do GitHub corretamente
+            - Atualizador automático com barra de progresso no topo
+            - Download e instalação do APK pelo app
+            - Tema claro: textos legíveis em todos os cards
+            - Intro não repete ao girar a tela
+            - Nuvem: swipe, zoom e prefetch mais rápido
+            - Tema claro com textos legíveis
+            - Upload paralelo (mais rápido)
+            - Splash/intro com logo
+            - Logo do avião redesenhado
+            - App mais fluido
             - Vibração ao trocar de aba
             - Tema claro (e escuro)
             - Galeria Nuvem restaura após reinstalar com as mesmas credenciais
@@ -129,7 +144,7 @@ jobs:
             3. Configure token + Group ID — a aba Nuvem sincroniza sozinha
           files: |
             TeleBackup-signed.apk
-            TeleBackup-v1.4.0-signed.apk
+            TeleBackup-v1.6.1-signed.apk
           draft: false
           prerelease: false
           make_latest: true

@@ -7,7 +7,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import android.app.Activity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -48,6 +50,7 @@ import com.telebackup.app.data.CloudMediaItem
 import com.telebackup.app.data.MediaItem
 import com.telebackup.app.data.MetadataOptions
 import com.telebackup.app.ui.components.GradientBackground
+import com.telebackup.app.ui.components.UpdateBanner
 import com.telebackup.app.ui.screens.BackupScreen
 import com.telebackup.app.ui.screens.CloudGalleryScreen
 import com.telebackup.app.ui.screens.CloudViewerScreen
@@ -83,6 +86,7 @@ fun TeleBackupAppRoot(
     onCloseViewer: () -> Unit,
     onOpenCloud: (CloudMediaItem) -> Unit,
     onCloseCloud: () -> Unit,
+    onCloudPageChanged: (CloudMediaItem) -> Unit,
     onRemoveCloud: (String) -> Unit,
     onClearCloud: () -> Unit,
     onSyncCloud: () -> Unit,
@@ -93,11 +97,16 @@ fun TeleBackupAppRoot(
     onOpenBatterySettings: () -> Unit,
     onDismissBatteryDialog: () -> Unit,
     onContinueAfterBattery: () -> Unit,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onCheckUpdate: () -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
+    onInstallUpdate: (Activity) -> Unit = {},
+    onDismissUpdate: () -> Unit = {}
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val activity = context as? Activity
     val view = LocalView.current
     val surfaces = LocalAppSurfaces.current
 
@@ -157,14 +166,16 @@ fun TeleBackupAppRoot(
 
     if (ui.cloudViewer != null) {
         CloudViewerScreen(
-            item = ui.cloudViewer,
-            fileUrl = ui.cloudFileUrl,
-            isLoading = ui.isLoadingCloudUrl,
+            items = cloudItems,
+            initial = ui.cloudViewer,
+            urlByFileId = ui.cloudUrlByFileId,
+            loadingIds = ui.cloudLoadingIds,
             onClose = onCloseCloud,
-            onRemove = {
-                onRemoveCloud(ui.cloudViewer.id)
+            onRemove = { item ->
+                onRemoveCloud(item.id)
                 onCloseCloud()
-            }
+            },
+            onPageChanged = onCloudPageChanged
         )
         return
     }
@@ -173,6 +184,15 @@ fun TeleBackupAppRoot(
         Scaffold(
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = {
+                UpdateBanner(
+                    state = ui.update,
+                    onDownload = onDownloadUpdate,
+                    onInstall = { activity?.let(onInstallUpdate) },
+                    onDismiss = onDismissUpdate,
+                    onRetry = onCheckUpdate
+                )
+            },
             snackbarHost = {
                 SnackbarHost(snackbarHostState) { data ->
                     Snackbar(
@@ -297,7 +317,8 @@ fun TeleBackupAppRoot(
                             onTest = onTestConnection,
                             onSaveMetadata = onSaveMetadata,
                             onBatteryStatusRefresh = { },
-                            onToggleTheme = onToggleTheme
+                            onToggleTheme = onToggleTheme,
+                            onCheckUpdate = onCheckUpdate
                         )
                     }
                 }
