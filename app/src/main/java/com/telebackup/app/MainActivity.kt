@@ -4,15 +4,23 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.app.Activity
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
@@ -20,6 +28,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.telebackup.app.service.BackupNotifier
 import com.telebackup.app.ui.TeleBackupAppRoot
+import com.telebackup.app.ui.screens.SplashScreen
 import com.telebackup.app.ui.theme.TeleBackupTheme
 
 class MainActivity : ComponentActivity() {
@@ -34,6 +43,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val deleteLauncher = registerForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        viewModel.onDeleteResult(result.resultCode == Activity.RESULT_OK)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -43,14 +58,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings by viewModel.settings.collectAsStateWithLifecycle()
             val dark = settings.darkTheme
+            // Survives rotation / config changes — intro only once per process start
+            var showSplash by rememberSaveable { mutableStateOf(true) }
 
-            // Status bar icons: dark on light theme, light on dark theme
             WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !dark
 
             TeleBackupTheme(darkTheme = dark) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = if (dark) Color(0xFF0B0F1A) else Color(0xFFF4F7FB)
+                    color = if (dark) Color(0xFF0B0F1A) else Color(0xFFF3F7FC)
                 ) {
                     val ui by viewModel.ui.collectAsStateWithLifecycle()
                     val cloud by viewModel.cloudItems.collectAsStateWithLifecycle()
@@ -63,44 +79,85 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // Launch system delete confirmation when ready
+                    LaunchedEffect(ui.pendingDeleteSender) {
+                        val sender = ui.pendingDeleteSender ?: return@LaunchedEffect
+                        try {
+                            deleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
+                        } catch (_: Exception) {
+                            viewModel.onDeleteResult(false)
+                        } finally {
+                            viewModel.consumeDeleteSender()
+                        }
+                    }
+
                     val filtered = when (ui.filter) {
                         MediaFilter.All -> ui.media
                         MediaFilter.Photos -> ui.media.filter { it.isImage }
                         MediaFilter.Videos -> ui.media.filter { it.isVideo }
                     }
 
-                    TeleBackupAppRoot(
-                        settings = settings,
-                        ui = ui,
-                        cloudItems = cloud,
-                        filteredMedia = filtered,
-                        onSaveConfig = viewModel::saveConfig,
-                        onTestConnection = viewModel::testConnection,
-                        onSaveMetadata = viewModel::saveMetadata,
-                        onAddFolder = viewModel::addFolder,
-                        onRemoveFolder = viewModel::removeFolder,
-                        onRefresh = viewModel::refreshMedia,
-                        onFilter = viewModel::setFilter,
-                        onToggleSelect = viewModel::toggleSelect,
-                        onEnterSelection = { id -> viewModel.enterSelectionMode(id) },
-                        onSelectAll = { viewModel.selectAllVisible(filtered.map { it.id }) },
-                        onClearSelection = viewModel::clearSelection,
-                        onOpenViewer = viewModel::openViewer,
-                        onCloseViewer = viewModel::closeViewer,
-                        onOpenCloud = viewModel::openCloudViewer,
-                        onCloseCloud = viewModel::closeCloudViewer,
-                        onRemoveCloud = viewModel::removeCloudItem,
-                        onClearCloud = viewModel::clearCloudGallery,
-                        onSyncCloud = { viewModel.syncCloudFromTelegram(silent = false) },
-                        onStartBackup = viewModel::startBackup,
-                        onClearSnackbar = viewModel::clearSnackbar,
-                        onResetBackup = viewModel::resetBackupState,
-                        onRequestBatteryUnrestricted = viewModel::requestBatteryUnrestricted,
-                        onOpenBatterySettings = viewModel::openBatterySettings,
-                        onDismissBatteryDialog = viewModel::dismissBatteryDialog,
-                        onContinueAfterBattery = viewModel::continueBackupAfterBatteryPrompt,
-                        onToggleTheme = { viewModel.setDarkTheme(!settings.darkTheme) }
-                    )
+                    AnimatedVisibility(
+                        visible = !showSplash,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        TeleBackupAppRoot(
+                            settings = settings,
+                            ui = ui,
+                            cloudItems = cloud,
+                            filteredMedia = filtered,
+                            onSaveConfig = viewModel::saveConfig,
+                            onTestConnection = viewModel::testConnection,
+                            onSaveMetadata = viewModel::saveMetadata,
+                            onAddFolder = viewModel::addFolder,
+                            onRemoveFolder = viewModel::removeFolder,
+                            onRefresh = viewModel::refreshMedia,
+                            onFilter = viewModel::setFilter,
+                            onToggleSelect = viewModel::toggleSelect,
+                            onEnterSelection = { id -> viewModel.enterSelectionMode(id) },
+                            onSelectAll = { viewModel.selectAllVisible(filtered.map { it.id }) },
+                            onClearSelection = viewModel::clearSelection,
+                            onOpenViewer = viewModel::openViewer,
+                            onCloseViewer = viewModel::closeViewer,
+                            onOpenCloud = viewModel::openCloudViewer,
+                            onCloseCloud = viewModel::closeCloudViewer,
+                            onCloudPageChanged = viewModel::onCloudPageChanged,
+                            onRemoveCloud = viewModel::removeCloudItem,
+                            onClearCloud = viewModel::clearCloudGallery,
+                            onSyncCloud = { viewModel.syncCloudFromTelegram(silent = false) },
+                            onStartBackup = viewModel::startBackup,
+                            onClearSnackbar = viewModel::clearSnackbar,
+                            onResetBackup = viewModel::resetBackupState,
+                            onRequestBatteryUnrestricted = viewModel::requestBatteryUnrestricted,
+                            onOpenBatterySettings = viewModel::openBatterySettings,
+                            onDismissBatteryDialog = viewModel::dismissBatteryDialog,
+                            onContinueAfterBattery = viewModel::continueBackupAfterBatteryPrompt,
+                            onToggleTheme = { viewModel.setDarkTheme(!settings.darkTheme) },
+                            onCheckUpdate = { viewModel.checkForAppUpdate(silent = false) },
+                            onDownloadUpdate = viewModel::startUpdateDownload,
+                            onInstallUpdate = { activity -> viewModel.installDownloadedUpdate(activity) },
+                            onDismissUpdate = viewModel::dismissUpdateBanner,
+                            onCleanupMode = viewModel::setCleanupMode,
+                            onAnalyzeCleanup = viewModel::analyzeCleanup,
+                            onSelectCleanupCategory = viewModel::selectCleanupCategory,
+                            onToggleCleanup = viewModel::toggleCleanupSelect,
+                            onSelectCleanupItems = viewModel::selectCleanupItems,
+                            onClearCleanupSelection = viewModel::clearCleanupSelection,
+                            onDeleteCleanupSelected = viewModel::requestDeleteSelectedCleanup
+                        )
+                    }
+
+                    AnimatedVisibility(
+                        visible = showSplash,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        SplashScreen(
+                            darkTheme = dark,
+                            onFinished = { showSplash = false }
+                        )
+                    }
                 }
             }
         }

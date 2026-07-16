@@ -1,8 +1,8 @@
 package com.telebackup.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.outlined.BatterySaver
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.NotificationsActive
@@ -36,24 +35,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.telebackup.app.ui.theme.NightBorder
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.SuccessGreen
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
 import com.telebackup.app.ui.theme.WarningAmber
 import com.telebackup.app.util.BatteryOptimization
 
-/**
- * Clean battery / background card.
- * Uses Activity context so Android shows the **native** unrestricted-background dialog.
- */
 @Composable
 fun BatteryPermissionCard(
     batteryOptimized: Boolean,
     onStatusMaybeChanged: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val surfaces = LocalAppSurfaces.current
 
     SectionCard {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -83,7 +77,7 @@ fun BatteryPermissionCard(
                     Text(
                         if (batteryOptimized) "Segundo plano bloqueado"
                         else "Segundo plano liberado",
-                        color = Color.White,
+                        color = surfaces.textPrimary,
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -94,7 +88,7 @@ fun BatteryPermissionCard(
                             "Permita uso sem restrição de bateria"
                         else
                             "Backup pode continuar com a tela off",
-                        color = TextSecondary,
+                        color = surfaces.textSecondary,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -105,7 +99,6 @@ fun BatteryPermissionCard(
             Spacer(Modifier.height(14.dp))
 
             if (batteryOptimized) {
-                // Primary CTA — short label so it never stacks over itself
                 Button(
                     onClick = {
                         BatteryOptimization.requestIgnoreBatteryOptimizations(context)
@@ -146,8 +139,8 @@ fun BatteryPermissionCard(
                         .fillMaxWidth()
                         .heightIn(min = 48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = BorderStroke(1.dp, NightBorder)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = surfaces.textPrimary),
+                    border = BorderStroke(1.dp, surfaces.border)
                 ) {
                     Text(
                         "Abrir ajustes do sistema",
@@ -161,7 +154,7 @@ fun BatteryPermissionCard(
                 Text(
                     "O Android abre um aviso nativo. Toque em Permitir / Sem restrições.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
+                    color = surfaces.textMuted,
                     maxLines = 3
                 )
             } else {
@@ -169,7 +162,7 @@ fun BatteryPermissionCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(SuccessGreen.copy(alpha = 0.12f))
+                        .background(SuccessGreen.copy(alpha = if (surfaces.isDark) 0.12f else 0.1f))
                         .border(1.dp, SuccessGreen.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -183,7 +176,7 @@ fun BatteryPermissionCard(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Tudo certo — o envio pode rodar em segundo plano.",
-                        color = Color.White,
+                        color = surfaces.textPrimary,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2
                     )
@@ -205,7 +198,7 @@ fun BatteryPermissionCard(
                 Text(
                     "Durante o backup, a notificação mostra o progresso (ex.: 12/50).",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted,
+                    color = surfaces.textMuted,
                     maxLines = 3
                 )
             }

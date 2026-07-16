@@ -7,11 +7,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import android.app.Activity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -48,7 +51,10 @@ import com.telebackup.app.data.CloudMediaItem
 import com.telebackup.app.data.MediaItem
 import com.telebackup.app.data.MetadataOptions
 import com.telebackup.app.ui.components.GradientBackground
+import com.telebackup.app.ui.components.UpdateBanner
 import com.telebackup.app.ui.screens.BackupScreen
+import com.telebackup.app.ui.screens.CleanupMode
+import com.telebackup.app.ui.screens.CleanupScreen
 import com.telebackup.app.ui.screens.CloudGalleryScreen
 import com.telebackup.app.ui.screens.CloudViewerScreen
 import com.telebackup.app.ui.screens.FoldersScreen
@@ -83,6 +89,7 @@ fun TeleBackupAppRoot(
     onCloseViewer: () -> Unit,
     onOpenCloud: (CloudMediaItem) -> Unit,
     onCloseCloud: () -> Unit,
+    onCloudPageChanged: (CloudMediaItem) -> Unit,
     onRemoveCloud: (String) -> Unit,
     onClearCloud: () -> Unit,
     onSyncCloud: () -> Unit,
@@ -93,16 +100,29 @@ fun TeleBackupAppRoot(
     onOpenBatterySettings: () -> Unit,
     onDismissBatteryDialog: () -> Unit,
     onContinueAfterBattery: () -> Unit,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onCheckUpdate: () -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
+    onInstallUpdate: (Activity) -> Unit = {},
+    onDismissUpdate: () -> Unit = {},
+    onCleanupMode: (CleanupMode) -> Unit = {},
+    onAnalyzeCleanup: () -> Unit = {},
+    onSelectCleanupCategory: (String?) -> Unit = {},
+    onToggleCleanup: (Long) -> Unit = {},
+    onSelectCleanupItems: (List<MediaItem>) -> Unit = {},
+    onClearCleanupSelection: () -> Unit = {},
+    onDeleteCleanupSelected: () -> Unit = {}
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val activity = context as? Activity
     val view = LocalView.current
     val surfaces = LocalAppSurfaces.current
 
     val tabs = listOf(
         Tab("Galeria", Icons.Outlined.PhotoLibrary),
+        Tab("Limpar", Icons.Outlined.CleaningServices),
         Tab("Nuvem", Icons.Outlined.Cloud),
         Tab("Pastas", Icons.Outlined.FolderOpen),
         Tab("Backup", Icons.Outlined.CloudUpload),
@@ -157,14 +177,16 @@ fun TeleBackupAppRoot(
 
     if (ui.cloudViewer != null) {
         CloudViewerScreen(
-            item = ui.cloudViewer,
-            fileUrl = ui.cloudFileUrl,
-            isLoading = ui.isLoadingCloudUrl,
+            items = cloudItems,
+            initial = ui.cloudViewer,
+            urlByFileId = ui.cloudUrlByFileId,
+            loadingIds = ui.cloudLoadingIds,
             onClose = onCloseCloud,
-            onRemove = {
-                onRemoveCloud(ui.cloudViewer.id)
+            onRemove = { item ->
+                onRemoveCloud(item.id)
                 onCloseCloud()
-            }
+            },
+            onPageChanged = onCloudPageChanged
         )
         return
     }
@@ -173,6 +195,15 @@ fun TeleBackupAppRoot(
         Scaffold(
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = {
+                UpdateBanner(
+                    state = ui.update,
+                    onDownload = onDownloadUpdate,
+                    onInstall = { activity?.let(onInstallUpdate) },
+                    onDismiss = onDismissUpdate,
+                    onRetry = onCheckUpdate
+                )
+            },
             snackbarHost = {
                 SnackbarHost(snackbarHostState) { data ->
                     Snackbar(
@@ -196,8 +227,11 @@ fun TeleBackupAppRoot(
                                 if (tab != index) {
                                     Haptics.tabSwitch(context, view)
                                     tab = index
-                                    if (index == 1 && settings.isConfigured) {
+                                    if (index == 2 && settings.isConfigured) {
                                         onSyncCloud()
+                                    }
+                                    if (index == 1) {
+                                        onAnalyzeCleanup()
                                     }
                                 }
                             },
@@ -247,10 +281,29 @@ fun TeleBackupAppRoot(
                             onOpen = onOpenViewer,
                             onBackup = {
                                 Haptics.tabSwitch(context, view)
-                                tab = 3
+                                tab = 4
                             }
                         )
-                        1 -> CloudGalleryScreen(
+                        1 -> CleanupScreen(
+                            media = ui.media,
+                            isLoading = ui.isLoadingMedia,
+                            isAnalyzing = ui.isAnalyzingCleanup,
+                            duplicates = ui.cleanupDuplicates,
+                            categories = ui.cleanupCategories,
+                            selectedIds = ui.cleanupSelectedIds,
+                            selectedCategoryId = ui.cleanupCategoryId,
+                            mode = ui.cleanupMode,
+                            onMode = onCleanupMode,
+                            onRefresh = onRefresh,
+                            onAnalyze = onAnalyzeCleanup,
+                            onSelectCategory = onSelectCleanupCategory,
+                            onToggle = onToggleCleanup,
+                            onSelectExtras = onSelectCleanupItems,
+                            onSelectAllInCategory = onSelectCleanupItems,
+                            onClearSelection = onClearCleanupSelection,
+                            onDeleteSelected = onDeleteCleanupSelected
+                        )
+                        2 -> CloudGalleryScreen(
                             items = cloudItems,
                             isConfigured = settings.isConfigured,
                             isSyncing = ui.isSyncingCloud,
@@ -260,15 +313,15 @@ fun TeleBackupAppRoot(
                             onSync = onSyncCloud,
                             onGoConfig = {
                                 Haptics.tabSwitch(context, view)
-                                tab = 4
+                                tab = 5
                             }
                         )
-                        2 -> FoldersScreen(
+                        3 -> FoldersScreen(
                             folderUris = settings.folderUris,
                             onAddFolder = onAddFolder,
                             onRemoveFolder = onRemoveFolder
                         )
-                        3 -> BackupScreen(
+                        4 -> BackupScreen(
                             settings = settings,
                             mediaCount = ui.media.size,
                             selectedCount = ui.selectedIds.size,
@@ -279,11 +332,11 @@ fun TeleBackupAppRoot(
                             onReset = onResetBackup,
                             onGoConfig = {
                                 Haptics.tabSwitch(context, view)
-                                tab = 4
+                                tab = 5
                             },
                             onGoCloud = {
                                 Haptics.tabSwitch(context, view)
-                                tab = 1
+                                tab = 2
                             },
                             onBatteryStatusRefresh = { }
                         )
@@ -297,7 +350,8 @@ fun TeleBackupAppRoot(
                             onTest = onTestConnection,
                             onSaveMetadata = onSaveMetadata,
                             onBatteryStatusRefresh = { },
-                            onToggleTheme = onToggleTheme
+                            onToggleTheme = onToggleTheme,
+                            onCheckUpdate = onCheckUpdate
                         )
                     }
                 }

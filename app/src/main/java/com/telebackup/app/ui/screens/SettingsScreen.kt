@@ -69,12 +69,9 @@ import com.telebackup.app.ui.components.SecondaryButton
 import com.telebackup.app.ui.components.SectionCard
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.theme.ErrorRose
-import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightElevated
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.SuccessGreen
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
 
 @Composable
 fun SettingsScreen(
@@ -89,12 +86,14 @@ fun SettingsScreen(
     onFixBattery: () -> Unit = {},
     onOpenBatterySettings: () -> Unit = {},
     onBatteryStatusRefresh: () -> Unit = {},
-    onToggleTheme: () -> Unit = {}
+    onToggleTheme: () -> Unit = {},
+    onCheckUpdate: () -> Unit = {}
 ) {
     var token by remember { mutableStateOf(settings.botToken) }
     var chatId by remember { mutableStateOf(settings.chatId) }
     var showToken by remember { mutableStateOf(false) }
     var meta by remember { mutableStateOf(settings.metadata) }
+    val surfaces = LocalAppSurfaces.current
 
     LaunchedEffect(settings.botToken, settings.chatId) {
         if (token.isEmpty()) token = settings.botToken
@@ -122,7 +121,7 @@ fun SettingsScreen(
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text("TeleBackup", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
-                Text("v1.4 · fotos, vídeos e nuvem", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                Text("v1.4 · fotos, vídeos e nuvem", style = MaterialTheme.typography.bodyMedium, color = surfaces.textSecondary)
             }
             TextButton(onClick = onToggleTheme) {
                 Text(
@@ -143,6 +142,13 @@ fun SettingsScreen(
                 onChecked = { onToggleTheme() }
             )
         }
+
+        Spacer(Modifier.height(12.dp))
+        PrimaryButton(
+            text = "Verificar atualizações",
+            onClick = onCheckUpdate,
+            icon = Icons.Outlined.Info
+        )
 
         Spacer(Modifier.height(20.dp))
 
@@ -168,7 +174,7 @@ fun SettingsScreen(
                         Icon(
                             if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                             contentDescription = "Mostrar token",
-                            tint = TextSecondary
+                            tint = surfaces.textSecondary
                         )
                     }
                 }
@@ -231,13 +237,13 @@ fun SettingsScreen(
                 Text(
                     "Arquivo (privacidade)",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
+                    color = surfaces.textPrimary
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Ao desligar, o app regrava a imagem removendo dados EXIF sensíveis antes do upload.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextMuted
+                    color = surfaces.textMuted
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -293,13 +299,13 @@ fun SettingsScreen(
 
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 14.dp),
-                    color = NightBorder.copy(alpha = 0.6f)
+                    color = surfaces.border.copy(alpha = 0.6f)
                 )
 
                 Text(
                     "Legenda no Telegram",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White
+                    color = surfaces.textPrimary
                 )
                 Spacer(Modifier.height(8.dp))
 
@@ -389,8 +395,8 @@ fun SettingsScreen(
                     Icon(Icons.Outlined.Info, contentDescription = null, tint = TelegramBlue)
                     Spacer(Modifier.width(10.dp))
                     Column {
-                        Text("Último backup", color = TextMuted, style = MaterialTheme.typography.labelMedium)
-                        Text(settings.lastBackupAt, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                        Text("Último backup", color = surfaces.textMuted, style = MaterialTheme.typography.labelMedium)
+                        Text(settings.lastBackupAt, color = surfaces.textPrimary, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
             }
@@ -400,7 +406,7 @@ fun SettingsScreen(
         Text(
             "v1.4.0 · Nuvem restaura com as mesmas credenciais",
             style = MaterialTheme.typography.bodySmall,
-            color = TextMuted,
+            color = surfaces.textMuted,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
         Spacer(Modifier.height(12.dp))
@@ -416,6 +422,7 @@ private fun MetaSwitch(
     enabled: Boolean = true,
     onChecked: (Boolean) -> Unit
 ) {
+    val surfaces = LocalAppSurfaces.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,20 +433,20 @@ private fun MetaSwitch(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(NightElevated),
+                .background(surfaces.elevated),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = if (enabled) TelegramBlue else TextMuted, modifier = Modifier.size(18.dp))
+            Icon(icon, null, tint = if (enabled) TelegramBlue else surfaces.textMuted, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
-                color = if (enabled) Color.White else TextMuted,
+                color = if (enabled) surfaces.textPrimary else surfaces.textMuted,
                 style = MaterialTheme.typography.bodyLarge
             )
             if (subtitle != null) {
-                Text(subtitle, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                Text(subtitle, color = surfaces.textMuted, style = MaterialTheme.typography.bodySmall)
             }
         }
         Switch(
@@ -449,8 +456,8 @@ private fun MetaSwitch(
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = TelegramBlue,
-                uncheckedThumbColor = TextSecondary,
-                uncheckedTrackColor = NightBorder
+                uncheckedThumbColor = surfaces.textSecondary,
+                uncheckedTrackColor = surfaces.border
             )
         )
     }
@@ -479,13 +486,14 @@ private fun StatusBanner(ok: Boolean, message: String) {
 
 @Composable
 private fun StepRow(n: Int, text: String) {
+    val surfaces = LocalAppSurfaces.current
     Row(verticalAlignment = Alignment.Top) {
         Box(
             modifier = Modifier
                 .size(26.dp)
                 .clip(CircleShape)
-                .background(NightElevated)
-                .border(1.dp, NightBorder, CircleShape),
+                .background(surfaces.elevated)
+                .border(1.dp, surfaces.border, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text("$n", color = TelegramBlue, style = MaterialTheme.typography.labelMedium)
@@ -493,7 +501,7 @@ private fun StepRow(n: Int, text: String) {
         Spacer(Modifier.width(12.dp))
         Text(
             text,
-            color = TextSecondary,
+            color = surfaces.textSecondary,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 3.dp)
         )
