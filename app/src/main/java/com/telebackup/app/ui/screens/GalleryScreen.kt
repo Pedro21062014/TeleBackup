@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayCircle
@@ -59,13 +60,12 @@ import com.telebackup.app.MediaFilter
 import com.telebackup.app.data.MediaItem
 import com.telebackup.app.ui.components.EmptyState
 import com.telebackup.app.ui.components.PrimaryButton
+import com.telebackup.app.ui.components.SecondaryButton
 import com.telebackup.app.ui.components.SectionHeader
 import com.telebackup.app.ui.components.StatChip
-import com.telebackup.app.ui.theme.NightBorder
-import com.telebackup.app.ui.theme.NightElevated
+import com.telebackup.app.ui.theme.ErrorRose
+import com.telebackup.app.ui.theme.LocalAppSurfaces
 import com.telebackup.app.ui.theme.TelegramBlue
-import com.telebackup.app.ui.theme.TextMuted
-import com.telebackup.app.ui.theme.TextSecondary
 import com.telebackup.app.util.ImageLoading
 
 @Composable
@@ -82,11 +82,16 @@ fun GalleryScreen(
     onSelectAll: () -> Unit,
     onClear: () -> Unit,
     onOpen: (MediaItem) -> Unit,
-    onBackup: () -> Unit
+    onBackup: () -> Unit,
+    onDelete: () -> Unit = {}
 ) {
+    val surfaces = LocalAppSurfaces.current
     val photos = media.count { it.isImage }
     val videos = media.count { it.isVideo }
     val gridState = rememberLazyGridState()
+    val selectedBytes = remember(selectedIds, media) {
+        media.filter { it.id in selectedIds }.sumOf { it.size }
+    }
 
     Column(
         modifier = Modifier
@@ -96,11 +101,11 @@ fun GalleryScreen(
     ) {
         SectionHeader(
             title = if (selectionMode) "${selectedIds.size} selecionado(s)" else "Galeria",
-            subtitle = if (selectionMode) "Toque para marcar · segure cancela"
-            else "Armazenamento interno · toque para ver · arraste no viewer",
+            subtitle = if (selectionMode) "Envie ao Telegram ou apague do aparelho"
+            else "Toque para ver · segure para selecionar · backup ou apagar",
             action = {
                 IconButton(onClick = onRefresh) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "Atualizar", tint = TextSecondary)
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Atualizar", tint = surfaces.textSecondary)
                 }
             }
         )
@@ -112,16 +117,16 @@ fun GalleryScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(NightElevated.copy(alpha = 0.55f))
-                .border(1.dp, NightBorder.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                .background(surfaces.elevated.copy(alpha = if (surfaces.isDark) 0.55f else 1f))
+                .border(1.dp, surfaces.border.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Icon(Icons.Outlined.Storage, null, tint = TelegramBlue, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(
-                "storage/emulated/0 · DCIM, Pictures, Download, Movies…",
+                "storage/emulated/0 · até 50 mil mídias",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
+                color = surfaces.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -158,18 +163,18 @@ fun GalleryScreen(
                 }
                 if (selectionMode || selectedIds.isNotEmpty()) {
                     TextButton(onClick = onClear) {
-                        Icon(Icons.Outlined.Close, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.Close, null, tint = surfaces.textSecondary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Limpar", color = TextSecondary)
+                        Text("Limpar", color = surfaces.textSecondary)
                     }
                 }
             }
             if (selectedIds.isNotEmpty()) {
-                TextButton(onClick = onBackup) {
-                    Icon(Icons.Outlined.CloudUpload, null, tint = TelegramBlue, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Backup", color = TelegramBlue)
-                }
+                Text(
+                    MediaItem.formatSize(selectedBytes),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = surfaces.textMuted
+                )
             }
         }
 
@@ -179,7 +184,7 @@ fun GalleryScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = TelegramBlue)
                         Spacer(Modifier.height(12.dp))
-                        Text("Lendo storage/emulated/0…", color = TextSecondary)
+                        Text("Lendo storage/emulated/0…", color = surfaces.textSecondary)
                     }
                 }
             }
@@ -187,7 +192,7 @@ fun GalleryScreen(
                 EmptyState(
                     icon = Icons.Outlined.PhotoLibrary,
                     title = "Nenhuma mídia encontrada",
-                    subtitle = "Permita acesso a fotos/vídeos. O app lê DCIM, Pictures, Download e Movies do armazenamento interno.",
+                    subtitle = "Permita acesso a fotos/vídeos. O app lê DCIM, Pictures, Download e Movies.",
                     actionLabel = "Atualizar",
                     onAction = onRefresh
                 )
@@ -223,11 +228,23 @@ fun GalleryScreen(
 
                 if (selectedIds.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    PrimaryButton(
-                        text = "Enviar ${selectedIds.size} para o Telegram",
-                        onClick = onBackup,
-                        icon = Icons.Outlined.CloudUpload
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SecondaryButton(
+                            text = "Apagar ${selectedIds.size}",
+                            onClick = onDelete,
+                            icon = Icons.Outlined.DeleteOutline,
+                            modifier = Modifier.weight(1f)
+                        )
+                        PrimaryButton(
+                            text = "Backup ${selectedIds.size}",
+                            onClick = onBackup,
+                            icon = Icons.Outlined.CloudUpload,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                 }
             }
@@ -237,6 +254,7 @@ fun GalleryScreen(
 
 @Composable
 private fun FilterChipMini(label: String, selected: Boolean, onClick: () -> Unit) {
+    val surfaces = LocalAppSurfaces.current
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -248,11 +266,11 @@ private fun FilterChipMini(label: String, selected: Boolean, onClick: () -> Unit
             selectedContainerColor = TelegramBlue.copy(alpha = 0.2f),
             selectedLabelColor = TelegramBlue,
             selectedLeadingIconColor = TelegramBlue,
-            containerColor = NightElevated.copy(alpha = 0.5f),
-            labelColor = TextSecondary
+            containerColor = surfaces.elevated,
+            labelColor = surfaces.textSecondary
         ),
         border = FilterChipDefaults.filterChipBorder(
-            borderColor = NightBorder,
+            borderColor = surfaces.border,
             selectedBorderColor = TelegramBlue.copy(alpha = 0.5f),
             enabled = true,
             selected = selected
@@ -270,6 +288,7 @@ private fun MediaThumb(
     onLongClick: () -> Unit,
     onCheckClick: () -> Unit
 ) {
+    val surfaces = LocalAppSurfaces.current
     val context = LocalContext.current
     val loader = remember(context) { ImageLoading.imageLoader(context) }
     val request = remember(item.uri, item.isVideo) {
@@ -282,10 +301,10 @@ private fun MediaThumb(
             .clip(RoundedCornerShape(12.dp))
             .border(
                 width = if (selected) 2.dp else 1.dp,
-                color = if (selected) TelegramBlue else NightBorder.copy(alpha = 0.4f),
+                color = if (selected) TelegramBlue else surfaces.border.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .background(NightElevated)
+            .background(surfaces.elevated)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -301,7 +320,7 @@ private fun MediaThumb(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(NightElevated)
+                        .background(surfaces.elevated)
                 )
             },
             error = {
@@ -309,7 +328,7 @@ private fun MediaThumb(
                     Icon(
                         if (item.isVideo) Icons.Outlined.Videocam else Icons.Outlined.PhotoLibrary,
                         null,
-                        tint = TextMuted,
+                        tint = surfaces.textMuted,
                         modifier = Modifier.size(28.dp)
                     )
                 }

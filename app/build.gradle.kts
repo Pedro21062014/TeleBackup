@@ -14,8 +14,8 @@ android {
         applicationId = "com.telebackup.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.4.0"
+        versionCode = 14
+        versionName = "1.7.2"
         vectorDrawables { useSupportLibrary = true }
     }
 
