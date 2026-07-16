@@ -1,7 +1,9 @@
 package com.telebackup.app.data
 
+import android.app.PendingIntent
 import android.content.ContentUris
 import android.content.Context
+import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -17,12 +19,13 @@ class MediaRepository(private val context: Context) {
     /**
      * Loads photos + videos from primary external storage
      * (/storage/emulated/0 — DCIM, Pictures, Download, Movies, etc.)
-     * via MediaStore, which is the correct Android API for that volume.
      */
-    suspend fun loadDeviceMedia(limit: Int = 2000): List<MediaItem> = withContext(Dispatchers.IO) {
+    suspend fun loadDeviceMedia(limit: Int = DEFAULT_LIMIT): List<MediaItem> = withContext(Dispatchers.IO) {
         coroutineScope {
-            val imagesDef = async { queryImages(limit) }
-            val videosDef = async { queryVideos(limit) }
+            // Query more of each type so combined list can fill the limit
+            val perType = (limit * 3 / 2).coerceAtLeast(limit)
+            val imagesDef = async { queryImages(perType) }
+            val videosDef = async { queryVideos(perType) }
             val images = imagesDef.await()
             val videos = videosDef.await()
             (images + videos)
@@ -48,7 +51,7 @@ class MediaRepository(private val context: Context) {
     }
 
     private fun queryImages(limit: Int): List<MediaItem> {
-        val items = ArrayList<MediaItem>(minOf(limit, 512))
+        val items = ArrayList<MediaItem>(minOf(limit, 4096))
         val collection = imageCollection()
 
         val projection = mutableListOf(
@@ -69,7 +72,6 @@ class MediaRepository(private val context: Context) {
         }
 
         val sort = "${MediaStore.Images.Media.DATE_ADDED} DESC"
-        // Only fully written files on Q+
         val selection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             "${MediaStore.Images.Media.IS_PENDING}=0 AND ${MediaStore.Images.Media.SIZE}>0"
         } else {
@@ -101,7 +103,6 @@ class MediaRepository(private val context: Context) {
 
                 var count = 0
                 while (cursor.moveToNext() && count < limit) {
-                    // Prefer primary emulated storage content
                     if (!isPrimaryStorage(cursor, relCol, dataCol)) continue
 
                     val id = cursor.getLong(idCol)
@@ -109,11 +110,12 @@ class MediaRepository(private val context: Context) {
                     val dateAdded = cursor.getLong(dateCol).let { d ->
                         if (d > 0) d else if (modCol >= 0) cursor.getLong(modCol) else 0L
                     }
+                    val relPath = if (relCol >= 0 && !cursor.isNull(relCol)) cursor.getString(relCol) else null
                     val bucket = when {
                         bucketCol >= 0 && !cursor.isNull(bucketCol) ->
                             cursor.getString(bucketCol)
-                        relCol >= 0 && !cursor.isNull(relCol) ->
-                            cursor.getString(relCol)?.trimEnd('/')?.substringAfterLast('/')
+                        !relPath.isNullOrBlank() ->
+                            relPath.trimEnd('/').substringAfterLast('/')
                         else -> "Pictures"
                     }
                     items += MediaItem(
@@ -123,20 +125,20 @@ class MediaRepository(private val context: Context) {
                         mimeType = cursor.getString(mimeCol) ?: "image/jpeg",
                         size = cursor.getLong(sizeCol),
                         dateAdded = dateAdded,
-                        folderName = bucket ?: "Pictures"
+                        folderName = bucket ?: "Pictures",
+                        relativePath = relPath.orEmpty()
                     )
                     count++
                 }
             }
         } catch (_: SecurityException) {
-            // missing permission
         } catch (_: Exception) {
         }
         return items
     }
 
     private fun queryVideos(limit: Int): List<MediaItem> {
-        val items = ArrayList<MediaItem>(minOf(limit, 256))
+        val items = ArrayList<MediaItem>(minOf(limit, 2048))
         val collection = videoCollection()
 
         val projection = mutableListOf(
@@ -198,11 +200,12 @@ class MediaRepository(private val context: Context) {
                     val dateAdded = cursor.getLong(dateCol).let { d ->
                         if (d > 0) d else if (modCol >= 0) cursor.getLong(modCol) else 0L
                     }
+                    val relPath = if (relCol >= 0 && !cursor.isNull(relCol)) cursor.getString(relCol) else null
                     val bucket = when {
                         bucketCol >= 0 && !cursor.isNull(bucketCol) ->
                             cursor.getString(bucketCol)
-                        relCol >= 0 && !cursor.isNull(relCol) ->
-                            cursor.getString(relCol)?.trimEnd('/')?.substringAfterLast('/')
+                        !relPath.isNullOrBlank() ->
+                            relPath.trimEnd('/').substringAfterLast('/')
                         else -> "Movies"
                     }
                     items += MediaItem(
@@ -213,7 +216,8 @@ class MediaRepository(private val context: Context) {
                         size = cursor.getLong(sizeCol),
                         dateAdded = dateAdded,
                         folderName = bucket ?: "Movies",
-                        durationMs = if (durCol >= 0) cursor.getLong(durCol) else 0L
+                        durationMs = if (durCol >= 0) cursor.getLong(durCol) else 0L,
+                        relativePath = relPath.orEmpty()
                     )
                     count++
                 }
@@ -224,11 +228,6 @@ class MediaRepository(private val context: Context) {
         return items
     }
 
-    /**
-     * Accept media on primary external volume (/storage/emulated/0/...).
-     * On Android 10+, VOLUME_EXTERNAL already targets that; still filter
-     * obvious secondary/USB paths when DATA is available.
-     */
     private fun isPrimaryStorage(
         cursor: android.database.Cursor,
         relCol: Int,
@@ -236,20 +235,16 @@ class MediaRepository(private val context: Context) {
     ): Boolean {
         if (dataCol >= 0 && !cursor.isNull(dataCol)) {
             val path = cursor.getString(dataCol) ?: return true
-            // Keep primary emulated storage and common roots
             if (path.startsWith("/storage/emulated/0") ||
                 path.startsWith("/sdcard") ||
                 path.startsWith("/storage/self/primary")
             ) return true
-            // Drop secondary volumes like /storage/XXXX-XXXX
             if (path.startsWith("/storage/") && !path.startsWith("/storage/emulated")) {
                 return false
             }
-            // Absolute path under Environment.getExternalStorageDirectory()
             val primary = Environment.getExternalStorageDirectory()?.absolutePath
             if (primary != null && path.startsWith(primary)) return true
         }
-        // RELATIVE_PATH on Q+ is relative to primary volume when using VOLUME_EXTERNAL
         if (relCol >= 0) return true
         return true
     }
@@ -338,7 +333,40 @@ class MediaRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Delete media. On Android 11+ returns IntentSender for system confirmation dialog.
+     * On older versions deletes directly and returns null.
+     */
+    fun createDeleteRequest(uris: List<Uri>): IntentSender? {
+        if (uris.isEmpty()) return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val pi: PendingIntent = MediaStore.createDeleteRequest(context.contentResolver, uris)
+            pi.intentSender
+        } else {
+            var deleted = 0
+            for (uri in uris) {
+                try {
+                    deleted += context.contentResolver.delete(uri, null, null)
+                } catch (_: Exception) {
+                }
+            }
+            null
+        }
+    }
+
+    fun deleteDirect(uris: List<Uri>): Int {
+        var deleted = 0
+        for (uri in uris) {
+            try {
+                if (context.contentResolver.delete(uri, null, null) > 0) deleted++
+            } catch (_: Exception) {
+            }
+        }
+        return deleted
+    }
+
     companion object {
+        const val DEFAULT_LIMIT = 50_000
         private const val VIDEO_ID_OFFSET = 5_000_000_000L
         private const val FOLDER_ID_OFFSET = 1_000_000L
     }

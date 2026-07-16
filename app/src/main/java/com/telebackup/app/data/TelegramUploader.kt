@@ -2,26 +2,44 @@ package com.telebackup.app.data
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class TelegramUploader(private val context: Context) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(180, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient by lazy {
+        val dispatcher = Dispatcher().apply {
+            maxRequests = 16
+            maxRequestsPerHost = 8
+        }
+        OkHttpClient.Builder()
+            .dispatcher(dispatcher)
+            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+            .retryOnConnectionFailure(true)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .build()
+    }
 
     data class TestResult(val ok: Boolean, val message: String)
 
@@ -88,7 +106,6 @@ class TelegramUploader(private val context: Context) {
             val caption = MetadataHelper.buildCaption(item, exif, options)
             tempFile = MetadataHelper.prepareUploadFile(context, item, options)
             val bytesSize = tempFile.length()
-            // Telegram limits: photo ~10MB, video/doc 50MB (bots)
             val isPhoto = item.isImage && bytesSize <= 10L * 1024 * 1024
             val isVideo = item.isVideo && bytesSize <= 50L * 1024 * 1024
 
@@ -119,9 +136,8 @@ class TelegramUploader(private val context: Context) {
                 val body = resp.body?.string().orEmpty()
                 val json = JSONObject(body)
                 if (!json.optBoolean("ok")) {
-                    // fallback document for failed photo/video
                     if (endpoint != "sendDocument") {
-                        return@withContext uploadAsDocument(token, chatId, item, tempFile, caption, exif)
+                        return@withContext uploadAsDocument(token, chatId, item, tempFile!!, caption, exif)
                     }
                     return@withContext UploadResult(false, error = json.optString("description", "Falha no envio"))
                 }
@@ -231,85 +247,111 @@ class TelegramUploader(private val context: Context) {
         )
     }
 
+    /**
+     * Parallel uploads (up to [parallelism]) with shared progress reporting.
+     * Much faster than sequential while respecting Telegram limits.
+     */
     suspend fun backupAll(
         token: String,
         chatId: String,
         items: List<MediaItem>,
         options: MetadataOptions,
         onProgress: (BackupProgress) -> Unit,
-        onUploaded: suspend (CloudMediaItem) -> Unit
-    ): BackupProgress {
+        onUploaded: suspend (CloudMediaItem) -> Unit,
+        parallelism: Int = 3
+    ): BackupProgress = coroutineScope {
         if (items.isEmpty()) {
             val p = BackupProgress(BackupState.Error, message = "Nenhuma mídia encontrada")
             onProgress(p)
-            return p
+            return@coroutineScope p
         }
-        val uploaded = mutableSetOf<Long>()
+
+        val total = items.size
+        val done = AtomicInteger(0)
+        val success = AtomicInteger(0)
+        val uploadedIds = mutableSetOf<Long>()
+        val idsLock = Mutex()
+        val progressLock = Mutex()
+
         onProgress(
             BackupProgress(
                 state = BackupState.Uploading,
                 current = 0,
-                total = items.size,
-                message = "Iniciando backup..."
+                total = total,
+                message = "Iniciando backup rápido…"
             )
         )
-        try {
-            sendText(
-                token, chatId,
-                "🚀 *Backup iniciado*\nTotal: ${items.size} arquivo(s)\nFotos + vídeos · TeleBackup"
-            )
-        } catch (_: Exception) {
-        }
 
-        for ((index, item) in items.withIndex()) {
-            onProgress(
-                BackupProgress(
-                    state = BackupState.Uploading,
-                    current = index,
-                    total = items.size,
-                    currentFile = item.name,
-                    message = "Enviando ${index + 1}/${items.size}",
-                    uploadedIds = uploaded.toSet()
+        // Fire-and-forget intro (don't block uploads)
+        async(Dispatchers.IO) {
+            try {
+                sendText(
+                    token, chatId,
+                    "🚀 *Backup iniciado*\nTotal: $total arquivo(s)\nParalelo ×$parallelism · TeleBackup"
                 )
-            )
-            val result = uploadMedia(token, chatId, item, options)
-            if (result.ok && result.cloudItem != null) {
-                uploaded += item.id
-                onUploaded(result.cloudItem)
-            } else {
-                onProgress(
-                    BackupProgress(
-                        state = BackupState.Uploading,
-                        current = index + 1,
-                        total = items.size,
-                        currentFile = item.name,
-                        message = "Erro em ${item.name}: ${result.error}",
-                        uploadedIds = uploaded.toSet()
-                    )
-                )
+            } catch (_: Exception) {
             }
-            delay(400)
         }
 
+        val semaphore = Semaphore(parallelism.coerceIn(1, 4))
+
+        items.map { item ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    progressLock.withLock {
+                        onProgress(
+                            BackupProgress(
+                                state = BackupState.Uploading,
+                                current = done.get(),
+                                total = total,
+                                currentFile = item.name,
+                                message = "Enviando ${done.get() + 1}/$total",
+                                uploadedIds = uploadedIds.toSet()
+                            )
+                        )
+                    }
+                    val result = uploadMedia(token, chatId, item, options)
+                    if (result.ok && result.cloudItem != null) {
+                        success.incrementAndGet()
+                        idsLock.withLock { uploadedIds += item.id }
+                        onUploaded(result.cloudItem)
+                    }
+                    val finished = done.incrementAndGet()
+                    progressLock.withLock {
+                        onProgress(
+                            BackupProgress(
+                                state = BackupState.Uploading,
+                                current = finished,
+                                total = total,
+                                currentFile = item.name,
+                                message = if (result.ok) "Enviados $finished/$total"
+                                else "Erro em ${item.name}: ${result.error}",
+                                uploadedIds = uploadedIds.toSet()
+                            )
+                        )
+                    }
+                    // tiny pause only on failure to ease retries
+                    if (!result.ok) delay(120)
+                }
+            }
+        }.awaitAll()
+
+        val okCount = success.get()
         val final = BackupProgress(
             state = BackupState.Success,
-            current = items.size,
-            total = items.size,
-            message = "Backup concluído: ${uploaded.size}/${items.size} enviados",
-            uploadedIds = uploaded.toSet()
+            current = total,
+            total = total,
+            message = "Backup concluído: $okCount/$total enviados",
+            uploadedIds = uploadedIds.toSet()
         )
         onProgress(final)
         try {
-            sendText(
-                token, chatId,
-                "✅ *Backup concluído*\nEnviados: ${uploaded.size}/${items.size}"
-            )
+            sendText(token, chatId, "✅ *Backup concluído*\nEnviados: $okCount/$total")
         } catch (_: Exception) {
         }
-        return final
+        final
     }
 
-    /** Resolve Telegram file_id to a temporary download URL */
     suspend fun getFileUrl(token: String, fileId: String): String? = withContext(Dispatchers.IO) {
         try {
             val req = Request.Builder()
